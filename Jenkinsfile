@@ -201,7 +201,8 @@ stages{
                   $END_DATE \
                   $END_TIME \
                   "$PROD_CSV" \
-                  "$MUTING_ENVIRONMENT_CSV"
+                  "$MUTING_ENVIRONMENT_CSV" \
+                  "$CONDITION_IDS"
               '''
             }
           } else if (params.CONDITION == 'destroy') {
