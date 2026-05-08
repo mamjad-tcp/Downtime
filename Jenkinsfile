@@ -97,26 +97,26 @@ pipeline{
     string(name: 'TICKET', defaultValue: 'DEVOPS-12345', description: 'Ticket Number for Backend Configuration/Reference')
     }
 stages{
-    stage('Install Dependencies') {
-      steps {
-        sh '''
-          # Check if Python is installed, if not install it
-          if ! command -v python3 &> /dev/null; then
-            echo "Installing Python3..."
-            apt-get update
-            apt-get install -y python3 python3-pip
-          else
-            echo "Python3 is already installed"
-            python3 --version
-          fi
+    // stage('Install Dependencies') {
+    //   steps {
+    //     sh '''
+    //       # Check if Python is installed, if not install it
+    //       if ! command -v python3 &> /dev/null; then
+    //         echo "Installing Python3..."
+    //         apt-get update
+    //         apt-get install -y python3 python3-pip
+    //       else
+    //         echo "Python3 is already installed"
+    //         python3 --version
+    //       fi
           
-          # Install required Python packages
-          echo "Installing Python dependencies..."
-          pip3 install --upgrade pip
-          pip3 install requests
-        '''
-      }
-    }
+    //       # Install required Python packages
+    //       echo "Installing Python dependencies..."
+    //       pip3 install --upgrade pip
+    //       pip3 install requests
+    //     '''
+    //   }
+    // }
 
     stage('Build selection payload') {
       steps {
