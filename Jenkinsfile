@@ -98,79 +98,98 @@ pipeline{
     }
 stages{
     stage('Build selection payload') {
-  steps {
-    script {
-      // 1) Parse selected environments (Extended Choice returns comma-separated string)
-      List<String> selectedEnvs = (params.MUTING_ENVIRONMENT ?: '')
-        .split(/\s*,\s*/)
-        .collect { it.trim() }
-        .findAll { it }
+      steps {
+        script {
+          // 1) Parse selected environments (Extended Choice returns comma-separated string)
+          List<String> selectedEnvs = (params.MUTING_ENVIRONMENT ?: '')
+            .split(/\s*,\s*/)
+            .collect { it.trim() }
+            .findAll { it }
 
-      // 2) Build prod comma-separated string from stacks
-      String prodCsv = (params.STACKS_NAME ?: '')
-        .split(/\s*,\s*/)
-        .collect { it.trim() }
-        .findAll { it }
-        .join(',')
+          // 2) Build prod comma-separated string from stacks
+          String prodCsv = (params.STACKS_NAME ?: '')
+            .split(/\s*,\s*/)
+            .collect { it.trim() }
+            .findAll { it }
+            .join(',')
 
-      // 3) Build condition IDs list based on selected environments
-      List<String> conditionIds = []
+          // 3) Build condition IDs list based on selected environments
+          List<String> conditionIds = []
 
-      if (selectedEnvs.contains('Sandbox')) {
-        conditionIds += [
-          env.SANDBOX_APP_CONDITIONID,
-          env.SANDBOX_ADM_CONDITIONID,
-          env.SANDBOX_SYNTHETIC_CONDITIONID
-        ]
+          if (selectedEnvs.contains('Sandbox')) {
+            conditionIds += [
+              env.SANDBOX_APP_CONDITIONID,
+              env.SANDBOX_ADM_CONDITIONID,
+              env.SANDBOX_SYNTHETIC_CONDITIONID
+            ]
+          }
+
+          if (selectedEnvs.contains('Admin')) {
+            conditionIds += [
+              env.ADM_CONDITIONID,
+              env.AWS_HOST_CONDITIONID,
+              env.TARGET_GROUP_CONDITIONID
+            ]
+          }
+
+          if (selectedEnvs.contains('App')) {
+            conditionIds += [
+              env.APP_CONDITIONID,
+              env.AWS_HOST_CONDITIONID,
+              env.TARGET_GROUP_CONDITIONID
+            ]
+          }
+
+          // Optional: remove duplicates while preserving order
+          conditionIds = conditionIds.findAll { it } // remove null/empty
+          conditionIds = conditionIds.findAll { it }  // keep non-empty
+          def seen = new java.util.LinkedHashSet()
+          seen.addAll(conditionIds)
+          conditionIds = new java.util.ArrayList(seen)
+
+          env.PROD_CSV = prodCsv
+          env.CONDITION_IDS = conditionIds.join(',')
+          env.MUTING_ENVIRONMENT_CSV = selectedEnvs.join(',')
+
+          echo "MUTING_ENVIRONMENT: ${selectedEnvs}"
+          echo "Stack Name: ${env.PROD_CSV}"
+          echo "CONDITION_IDS Selected: ${env.CONDITION_IDS}"
+        }
       }
-
-      if (selectedEnvs.contains('Admin')) {
-        conditionIds += [
-          env.ADM_CONDITIONID,
-          env.AWS_HOST_CONDITIONID,
-          env.TARGET_GROUP_CONDITIONID
-        ]
-      }
-
-      if (selectedEnvs.contains('App')) {
-        conditionIds += [
-          env.APP_CONDITIONID,
-          env.AWS_HOST_CONDITIONID,
-          env.TARGET_GROUP_CONDITIONID
-        ]
-      }
-
-      // Optional: remove duplicates while preserving order
-      conditionIds = conditionIds.findAll { it } // remove null/empty
-      conditionIds = conditionIds.findAll { it }  // keep non-empty
-      def seen = new java.util.LinkedHashSet()
-      seen.addAll(conditionIds)
-      conditionIds = new java.util.ArrayList(seen)
-
-      env.PROD_CSV = prodCsv
-      env.CONDITION_IDS = conditionIds.join(',')
-      env.START_DATE = "${params.START_DATE}T${params.START_TIME}"
-      env.END_DATE = "${params.END_DATE}T${params.END_TIME}"
-
-      echo "MUTING_ENVIRONMENT: ${selectedEnvs}"
-      echo "Stack Name: ${env.PROD_CSV}"
-      echo "CONDITION_IDS Selected: ${env.CONDITION_IDS}"
     }
+
     stage('Apply/Destroy Downtime') {
       steps {
-       if(params.CONDITION == 'apply') {
-          echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
-          python3 downtime.py ${env.TCP_ACCOUNT_ID} ${env.NEWRELIC_TOKEN} ${env.CONDITION_IDS} "${env.START_DATE}" "${env.END_DATE}" "${params.TICKET}"
-        } else if (params.CONDITION == 'destroy') {
-          echo "Destroying downtime for prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
-          python3 downtime.py ${env.TCP_ACCOUNT_ID} ${env.NEWRELIC_TOKEN} ${env.CONDITION_IDS}  "${env.END_DATE}" "${params.TICKET}"
-        } else {
-          error "Invalid CONDITION parameter: ${params.CONDITION}. Must be 'apply' or 'destroy'."
+        script {
+          if(params.CONDITION == 'apply') {
+            echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
+            sh """
+              python3 downtime.py \
+                ${env.NEWRELIC_TOKEN} \
+                ${env.TCP_ACCOUNT_ID} \
+                apply \
+                ${params.TICKET} \
+                ${params.START_DATE} \
+                ${params.START_TIME} \
+                ${params.END_DATE} \
+                ${params.END_TIME} \
+                "${env.PROD_CSV}" \
+                "${env.MUTING_ENVIRONMENT_CSV}"
+            """
+          } else if (params.CONDITION == 'destroy') {
+            echo "Destroying downtime for prods: ${env.PROD_CSV}"
+            sh """
+              python3 downtime.py \
+                ${env.NEWRELIC_TOKEN} \
+                ${env.TCP_ACCOUNT_ID} \
+                destroy \
+                ${params.TICKET}
+            """
+          } else {
+            error "Invalid CONDITION parameter: ${params.CONDITION}. Must be 'apply' or 'destroy'."
+          }
         }
-
       }
     }
-  }
-}
 }
 }

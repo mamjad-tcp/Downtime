@@ -61,6 +61,7 @@ def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, m
 
     guid_string = ', '.join([f'"{g.strip()}"' for g in monitor_guids if g.strip()])
 
+    # Format: convert "yyyy-MM-dd HH:mm:ss" to "yyyy-MM-ddTHH:mm:ss"
     start_time = start_time.replace(' ', 'T')
     end_time = end_time.replace(' ', 'T')
 
@@ -161,9 +162,9 @@ if __name__ == "__main__":
         stacks_name = sys.argv[9]  # comma-separated list
         muting_environment = sys.argv[10]  # comma-separated list
 
-        # Combine date and time
-        start_datetime = f"{start_date} {start_time}"
-        end_datetime = f"{end_date} {end_time}"
+        # Combine date and time in format: yyyy-MM-ddTHH:mm:ss
+        start_datetime = f"{start_date}T{start_time}"
+        end_datetime = f"{end_date}T{end_time}"
 
         # Parse stack names
         stack_names = [s.strip() for s in stacks_name.split(",") if s.strip()]
