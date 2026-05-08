@@ -187,7 +187,7 @@ stages{
             withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
                 sh '''
                 python3 --version
-                sudo apt-get install -y python3-requests
+            
 
                 '''
               sh '''
