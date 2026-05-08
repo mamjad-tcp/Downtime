@@ -149,7 +149,7 @@ stages{
       env.PROD_CSV = prodCsv
       env.CONDITION_IDS = conditionIds.join(',')
 
-      echo "MUTING_ENVIRONMENT: ${selectedEnvs}""
+      echo "MUTING_ENVIRONMENT: ${selectedEnvs}"
       echo "Stack Name: ${env.PROD_CSV}"
       echo "CONDITION_IDS Selected: ${env.CONDITION_IDS}"
     }
