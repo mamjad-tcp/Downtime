@@ -4,6 +4,7 @@ import sys
 import os
 
 ENDPOINT = "https://api.newrelic.com/graphql"
+SYNTHETICS_ENDPOINT = "https://synthetics.newrelic.com/synthetics/api/v3/monitors"
 
 
 def execute_graphql(api_key, query):
@@ -54,6 +55,76 @@ def load_muting_rule_ids(ticket):
         with open(filename, 'r') as f:
             return [line.strip() for line in f.readlines() if line.strip()]
     return []
+
+
+# ---------------- MONITOR GUID FETCHING ----------------
+def get_monitor_guids(api_key, stack_names):
+    """
+    Fetch monitor GUIDs from NewRelic Synthetics API based on stack names.
+    
+    Args:
+        api_key: NewRelic API key (Synthetics API key)
+        stack_names: List of stack names to search for
+    
+    Returns:
+        List of monitor GUIDs that match the stack names
+    """
+    headers = {"X-Api-Key": f"{api_key}"}
+    
+    limit = 100
+    offset = 0
+    all_monitors = []
+    count = 1
+    
+    # Fetch all monitors from NewRelic
+    print("Fetching monitors from NewRelic Synthetics API...")
+    while count != 0:
+        params = {'limit': limit, 'offset': offset}
+        try:
+            response = requests.get(SYNTHETICS_ENDPOINT, headers=headers, params=params, timeout=60)
+            response.raise_for_status()
+            monitors_data = response.json()
+            count = monitors_data.get('count', 0)
+            monitors = monitors_data.get('monitors', [])
+            
+            if monitors:
+                all_monitors.extend(monitors)
+                print(f"Fetched {len(monitors)} monitors, total so far: {len(all_monitors)}")
+            
+            offset = limit + offset
+        except Exception as e:
+            print(f"Error fetching monitors: {e}")
+            raise
+    
+    # Filter monitors by stack names
+    print(f"Filtering monitors by stack names: {stack_names}")
+    monitor_guids = []
+    
+    for stack_name in stack_names:
+        stack_lower = stack_name.lower()
+        matched_monitors = []
+        
+        for monitor in all_monitors:
+            monitor_name = monitor.get("name", "").lower()
+            if stack_lower in monitor_name:
+                monitor_guid = monitor.get("id")
+                monitor_name_full = monitor.get("name")
+                matched_monitors.append((monitor_guid, monitor_name_full))
+        
+        if matched_monitors:
+            print(f"Stack '{stack_name}' matched {len(matched_monitors)} monitor(s):")
+            for guid, name in matched_monitors:
+                print(f"  - {name} (GUID: {guid})")
+                monitor_guids.append(guid)
+        else:
+            print(f"Warning: No monitors found for stack '{stack_name}'")
+    
+    if not monitor_guids:
+        print("Error: No monitor GUIDs found for any of the specified stacks")
+        sys.exit(1)
+    
+    print(f"Total monitor GUIDs to apply downtime: {len(monitor_guids)}")
+    return monitor_guids
 
 
 # ---------------- CREATE ----------------
@@ -178,7 +249,10 @@ if __name__ == "__main__":
         print(f"Start: {start_datetime}")
         print(f"End: {end_datetime}")
 
-        # Create synthetic downtime
+        # Fetch monitor GUIDs based on stack names
+        monitor_guids = get_monitor_guids(api_key, stack_names)
+
+        # Create synthetic downtime with fetched monitor GUIDs
         downtime_name = f"{ticket}_downtime"
         result = create_synthetic_downtime(
             api_key,
@@ -186,7 +260,7 @@ if __name__ == "__main__":
             downtime_name,
             start_datetime,
             end_datetime,
-            stack_names
+            monitor_guids
         )
 
         print("Create response debugging info:")
