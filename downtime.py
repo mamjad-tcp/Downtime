@@ -250,7 +250,7 @@ if __name__ == "__main__":
         print(f"End: {end_datetime}")
 
         # Fetch monitor GUIDs based on stack names
-        monitor_guids = get_monitor_guids(api_key, stack_names)
+        monitor_guids = get_monitor_guids(api_key, account_id, stack_names)
 
         # Create synthetic downtime with fetched monitor GUIDs
         downtime_name = f"{ticket}_downtime"
