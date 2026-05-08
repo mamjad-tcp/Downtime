@@ -77,7 +77,7 @@ def get_monitor_guids(api_key, stack_names):
     query = """
     {
       actor {
-        entitySearch(query: "type = 'MONITOR' or type = 'MONITOR_DOWNTIME' or type = 'RUNTIME_VALIDATION'") {
+        entitySearch(query: "type like '%'") {
           results {
             entities {
               guid
