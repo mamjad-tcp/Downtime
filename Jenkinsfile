@@ -187,6 +187,8 @@ stages{
             withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
                 sh '''
                 python3 --version
+                pip3 install requests
+                
                 '''
               sh '''
                 python3 downtime.py \
