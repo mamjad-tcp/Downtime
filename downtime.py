@@ -206,7 +206,7 @@ def create_muting_rule(api_key, account_id, name, start_time, end_time, timezone
     for condition_name in condition_names:
         conditions_array.append(f'''
         {{
-          attribute: "conditionName"
+          attribute: "conditionId"
           operator: EQUALS
           values: "{condition_name}"
         }}
