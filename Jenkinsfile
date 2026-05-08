@@ -142,23 +142,16 @@ stages{
       // Optional: remove duplicates while preserving order
       conditionIds = conditionIds.findAll { it } // remove null/empty
       conditionIds = conditionIds.findAll { it }  // keep non-empty
-        def seen = new java.util.LinkedHashSet()
-        seen.addAll(conditionIds)
-        conditionIds = new java.util.ArrayList(seen)
+      def seen = new java.util.LinkedHashSet()
+      seen.addAll(conditionIds)
+      conditionIds = new java.util.ArrayList(seen)
 
-      // Export if you need later stages to use them as strings
       env.PROD_CSV = prodCsv
       env.CONDITION_IDS = conditionIds.join(',')
 
-      // 4) Print info to console
-      echo "MUTING_ENVIRONMENT (raw): ${params.MUTING_ENVIRONMENT}"
-      echo "MUTING_ENVIRONMENT (list): ${selectedEnvs}"
-
-      echo "STACKS_NAME (raw): ${params.STACKS_NAME}"
-      echo "PROD_CSV: ${env.PROD_CSV}"
-
-      echo "Condition IDs (list): ${conditionIds}"
-      echo "CONDITION_IDS (csv): ${env.CONDITION_IDS}"
+      echo "MUTING_ENVIRONMENT: ${selectedEnvs}""
+      echo "Stack Name: ${env.PROD_CSV}"
+      echo "CONDITION_IDS Selected: ${env.CONDITION_IDS}"
     }
   }
 }
