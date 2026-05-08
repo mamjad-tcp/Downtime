@@ -141,7 +141,10 @@ stages{
 
       // Optional: remove duplicates while preserving order
       conditionIds = conditionIds.findAll { it } // remove null/empty
-      conditionIds = conditionIds.toUnique()
+      conditionIds = conditionIds.findAll { it }  // keep non-empty
+        def seen = new java.util.LinkedHashSet()
+        seen.addAll(conditionIds)
+        conditionIds = new java.util.ArrayList(seen)
 
       // Export if you need later stages to use them as strings
       env.PROD_CSV = prodCsv
