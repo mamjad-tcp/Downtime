@@ -60,90 +60,79 @@ def load_muting_rule_ids(ticket):
 # ---------------- MONITOR GUID FETCHING ----------------
 def get_monitor_guids(api_key, stack_names):
     """
-    Fetch monitor GUIDs from NewRelic Synthetics REST API based on stack names.
+    Fetch monitor EntityGUIDs from NewRelic GraphQL API based on stack names.
     
     Args:
         api_key: NewRelic API key
         stack_names: List of stack names to search for
     
     Returns:
-        List of monitor GUIDs that match the stack names
+        List of monitor EntityGUIDs that match the stack names
     """
     monitor_guids = []
-    all_monitors = []
     
-    print("Fetching monitors from NewRelic Synthetics REST API...")
+    print("Fetching monitor EntityGUIDs from NewRelic GraphQL API...")
     
-    headers = {"X-Api-Key": f"{api_key}"}
+    # Query to fetch synthetic monitors
+    query = """
+    {
+      actor {
+        entitySearch(query: "type = 'SYNTHETIC MONITOR' ") {
+          results {
+            entities {
+              guid
+              name
+              type
+            }
+          }
+        }
+      }
+    }
+    """
     
-    limit = 100
-    offset = 0
-    count = 1
-    page = 1
-    
-    # Paginate through all monitors
-    while count != 0:
-        params = {'limit': limit, 'offset': offset}
-        try:
-            response = requests.get(SYNTHETICS_ENDPOINT, headers=headers, params=params, timeout=60)
-            response.raise_for_status()
-            monitors_data = response.json()
-            
-            count = monitors_data.get('count', 0)
-            monitors = monitors_data.get('monitors', [])
-            
-            if monitors:
-                all_monitors.extend(monitors)
-                print(f"Page {page}: Fetched {len(monitors)} monitors, total so far: {len(all_monitors)}")
-            
-            offset = limit + offset
-            page += 1
-            
-        except Exception as e:
-            print(f"Error fetching monitors from REST API: {e}")
-            raise
-    
-    print(f"Total monitors found: {len(all_monitors)}")
-    
-    # Log monitor types distribution
-    monitor_types = {}
-    for monitor in all_monitors:
-        monitor_type = monitor.get("type", "UNKNOWN")
-        monitor_types[monitor_type] = monitor_types.get(monitor_type, 0) + 1
-    
-    print("Monitor types distribution:")
-    for mtype, count in sorted(monitor_types.items()):
-        print(f"  - {mtype}: {count}")
-    
-    # Filter monitors by stack names
-    print(f"Filtering monitors by stack names: {stack_names}")
-    
-    for stack_name in stack_names:
-        stack_lower = stack_name.lower()
-        matched_monitors = []
+    try:
+        result = execute_graphql(api_key, query)
         
-        for monitor in all_monitors:
-            monitor_name = monitor.get("name", "").lower()
-            monitor_id = monitor.get("id")
-            monitor_type = monitor.get("type", "UNKNOWN")
-            
-            if stack_lower in monitor_name:
-                matched_monitors.append((monitor_id, monitor.get("name"), monitor_type))
+        if result.get("errors"):
+            print(f"GraphQL Error: {result.get('errors')}")
+            raise Exception("Failed to fetch monitors from GraphQL API")
         
-        if matched_monitors:
-            print(f"Stack '{stack_name}' matched {len(matched_monitors)} monitor(s):")
-            for guid, name, mtype in matched_monitors:
-                print(f"  - {name} (Type: {mtype}, ID: {guid})")
-                monitor_guids.append(guid)
-        else:
-            print(f"Warning: No monitors found for stack '{stack_name}'")
-    
-    if not monitor_guids:
-        print("Error: No monitor IDs found for any of the specified stacks")
-        sys.exit(1)
-    
-    print(f"Total monitor IDs to apply downtime: {len(monitor_guids)}")
-    return monitor_guids
+        entities = result.get("data", {}).get("actor", {}).get("entitySearch", {}).get("results", {}).get("entities", [])
+        
+        print(f"Total monitors found: {len(entities)}")
+        
+        # Filter monitors by stack names
+        print(f"Filtering monitors by stack names: {stack_names}")
+        
+        for stack_name in stack_names:
+            stack_lower = stack_name.lower()
+            matched_monitors = []
+            
+            for entity in entities:
+                entity_name = entity.get("name", "").lower()
+                entity_guid = entity.get("guid")
+                
+                if stack_lower in entity_name:
+                    matched_monitors.append((entity_guid, entity.get("name")))
+            
+            if matched_monitors:
+                print(f"Stack '{stack_name}' matched {len(matched_monitors)} monitor(s):")
+                for guid, name in matched_monitors:
+                    print(f"  - {name} (EntityGUID: {guid})")
+                    monitor_guids.append(guid)
+            else:
+                print(f"Warning: No monitors found for stack '{stack_name}'")
+        
+        if not monitor_guids:
+            print("Error: No monitor EntityGUIDs found for any of the specified stacks")
+            sys.exit(1)
+        
+        print(f"Total monitor EntityGUIDs to apply downtime: {len(monitor_guids)}")
+        return monitor_guids
+        
+    except Exception as e:
+        print(f"Error fetching monitors: {e}")
+        raise
 
 
 # ---------------- CREATE ----------------
@@ -160,7 +149,7 @@ def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, m
       syntheticsCreateOnceMonitorDowntime(
         accountId: {account_id},
         name: "{name}",
-        monitorGuids: ${guid_string},
+        monitorGuids: [{guid_string}],
         timezone: "America/Chicago",
         startTime: "{start_time}",
         endTime: "{end_time}"
@@ -432,5 +421,4 @@ if __name__ == "__main__":
     else:
         print(f"Unknown condition: {condition}. Use 'apply' or 'destroy'.")
         sys.exit(1)
-
 
