@@ -77,12 +77,12 @@ def get_monitor_guids(api_key, stack_names):
     query = """
     {
       actor {
-        entitySearch(query: "type = 'STEP_MONITOR' OR type = 'Simple' OR type = 'SCRIPT_API'") {
+        entitySearch(query: "entity_type = 'STEP_MONITOR' OR entity_type = 'Simple' OR entity_type = 'SCRIPT_API'") {
           results {
             entities {
               guid
               name
-              type
+              entity_type
             }
           }
         }
