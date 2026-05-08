@@ -3,6 +3,7 @@ pipeline{
 
     environment{
         NEWRELIC_TOKEN = credentials('tcp-newrelic-key')
+        TCP_ACCOUNT_ID = '4473520'
         APP_CONDITIONID = '44735169'
         ADM_CONDITIONID = '44760251'
         AWS_HOST_CONDITIONID = '44735098'
@@ -148,10 +149,26 @@ stages{
 
       env.PROD_CSV = prodCsv
       env.CONDITION_IDS = conditionIds.join(',')
+      env.START_DATE = "${params.START_DATE}T${params.START_TIME}"
+      env.END_DATE = "${params.END_DATE}T${params.END_TIME}"
 
       echo "MUTING_ENVIRONMENT: ${selectedEnvs}"
       echo "Stack Name: ${env.PROD_CSV}"
       echo "CONDITION_IDS Selected: ${env.CONDITION_IDS}"
+    }
+    stage('Apply/Destroy Downtime') {
+      steps {
+       if(params.CONDITION == 'apply') {
+          echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
+          python3 downtime.py ${env.TCP_ACCOUNT_ID} ${env.NEWRELIC_TOKEN} ${env.CONDITION_IDS} "${env.START_DATE}" "${env.END_DATE}" "${params.TICKET}"
+        } else if (params.CONDITION == 'destroy') {
+          echo "Destroying downtime for prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
+          python3 downtime.py ${env.TCP_ACCOUNT_ID} ${env.NEWRELIC_TOKEN} ${env.CONDITION_IDS}  "${env.END_DATE}" "${params.TICKET}"
+        } else {
+          error "Invalid CONDITION parameter: ${params.CONDITION}. Must be 'apply' or 'destroy'."
+        }
+
+      }
     }
   }
 }
