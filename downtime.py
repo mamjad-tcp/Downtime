@@ -86,7 +86,11 @@ def get_monitor_guids(api_key, account_id, stack_names):
         results = result.get("data", {}).get("actor", {}).get("nrql", {}).get("results", [])
 
         print(f"Total results from NRQL query: {len(results)}")
-
+        print("All monitors fetched from New Relic:")
+        for monitor in all_monitors:
+            name = monitor.get("name") or "<no-name>"
+            guid = monitor.get("guid") or "<no-guid>"
+            print(f"  - {name} (EntityGUID: {guid})")
         seen_guids = set()
         for item in results:
             entity_guid = item.get("entityGuid")
