@@ -185,8 +185,11 @@ stages{
           if(params.CONDITION == 'apply') {
             echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
             withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
+                sh '''
+                python --version
+                '''
               sh '''
-                python3 downtime.py \
+                python downtime.py \
                   $API_KEY \
                   $TCP_ACCOUNT_ID \
                   apply \
@@ -203,7 +206,7 @@ stages{
             echo "Destroying downtime for prods: ${env.PROD_CSV}"
             withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
               sh '''
-                python3 downtime.py \
+                python downtime.py \
                   $API_KEY \
                   $TCP_ACCOUNT_ID \
                   destroy \
