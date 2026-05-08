@@ -352,7 +352,7 @@ if __name__ == "__main__":
                 start_datetime,
                 end_datetime,
                 "America/Chicago",
-                [env]  # env is the condition name
+                condition_ids
             )
 
             print(f"Muting rule creation response for '{env}':")
