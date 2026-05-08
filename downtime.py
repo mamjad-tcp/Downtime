@@ -160,7 +160,7 @@ def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, m
       syntheticsCreateOnceMonitorDowntime(
         accountId: {account_id},
         name: "{name}",
-        monitorGuids: [{guid_string}],
+        monitorGuids: ${guid_string},
         timezone: "America/Chicago",
         startTime: "{start_time}",
         endTime: "{end_time}"
