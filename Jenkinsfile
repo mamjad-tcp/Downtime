@@ -163,28 +163,32 @@ stages{
         script {
           if(params.CONDITION == 'apply') {
             echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
-            sh """
-              python3 downtime.py \
-                ${env.NEWRELIC_TOKEN} \
-                ${env.TCP_ACCOUNT_ID} \
-                apply \
-                ${params.TICKET} \
-                ${params.START_DATE} \
-                ${params.START_TIME} \
-                ${params.END_DATE} \
-                ${params.END_TIME} \
-                "${env.PROD_CSV}" \
-                "${env.MUTING_ENVIRONMENT_CSV}"
-            """
+            withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
+              sh '''
+                python downtime.py \
+                  $API_KEY \
+                  $TCP_ACCOUNT_ID \
+                  apply \
+                  $TICKET \
+                  $START_DATE \
+                  $START_TIME \
+                  $END_DATE \
+                  $END_TIME \
+                  "$PROD_CSV" \
+                  "$MUTING_ENVIRONMENT_CSV"
+              '''
+            }
           } else if (params.CONDITION == 'destroy') {
             echo "Destroying downtime for prods: ${env.PROD_CSV}"
-            sh """
-              python3 downtime.py \
-                ${env.NEWRELIC_TOKEN} \
-                ${env.TCP_ACCOUNT_ID} \
-                destroy \
-                ${params.TICKET}
-            """
+            withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
+              sh '''
+                python downtime.py \
+                  $API_KEY \
+                  $TCP_ACCOUNT_ID \
+                  destroy \
+                  $TICKET
+              '''
+            }
           } else {
             error "Invalid CONDITION parameter: ${params.CONDITION}. Must be 'apply' or 'destroy'."
           }
