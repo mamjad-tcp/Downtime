@@ -58,10 +58,21 @@ def load_muting_rule_ids(ticket):
 
 
 def get_monitor_guids(api_key, account_id, stack_names):
+    """
+    Fetch monitor EntityGUIDs from New Relic NRQL query based on stack names.
+
+    Args:
+        api_key: NewRelic API key
+        account_id: NewRelic account ID
+        stack_names: List of stack names to search for
+
+    Returns:
+        List of monitor EntityGUIDs that match the stack names
+    """
     monitor_guids = []
     all_monitors = []
 
-    print("Fetching monitor EntityGUIDs from NewRelic using NRQL query...")
+    print("Fetching monitor EntityGUIDs from New Relic using NRQL query...")
 
     query = f"""
     {{
@@ -81,12 +92,15 @@ def get_monitor_guids(api_key, account_id, stack_names):
 
         if result.get("errors"):
             print(f"GraphQL Error: {result.get('errors')}")
-            return []
+            raise Exception("Failed to fetch monitors from NRQL query")
 
         results = result.get("data", {}).get("actor", {}).get("nrql", {}).get("results", [])
 
         print(f"Total results from NRQL query: {len(results)}")
+        print("Raw NRQL results:")
+        print(json.dumps(results, indent=2))
 
+        # Process results and deduplicate by entity GUID
         seen_guids = set()
         for item in results:
             entity_guid = item.get("entityGuid")
@@ -99,23 +113,41 @@ def get_monitor_guids(api_key, account_id, stack_names):
                     "name": monitor_name
                 })
 
+        print(f"Total unique monitors found: {len(all_monitors)}")
         print("All monitors fetched from New Relic:")
         for monitor in all_monitors:
             name = monitor.get("name") or "<no-name>"
             guid = monitor.get("guid") or "<no-guid>"
             print(f"  - {name} (EntityGUID: {guid})")
+
+        # Filter monitors by stack names
+        print(f"Filtering monitors by stack names: {stack_names}")
+
         for stack_name in stack_names:
             stack_lower = stack_name.lower()
+            matched_monitors = []
 
             for monitor in all_monitors:
                 monitor_name = (monitor.get("name") or "").lower()
                 monitor_guid = monitor.get("guid")
 
-                if stack_lower in monitor_name and monitor_guid:
-                    monitor_guids.append(monitor_guid)
+                if stack_lower in monitor_name:
+                    matched_monitors.append((monitor_guid, monitor.get("name")))
+
+            if matched_monitors:
+                print(f"Stack '{stack_name}' matched {len(matched_monitors)} monitor(s):")
+                for guid, name in matched_monitors:
+                    print(f"  - {name} (EntityGUID: {guid})")
+                    monitor_guids.append(guid)
+            else:
+                print(f"Warning: No monitors found for stack '{stack_name}'")
+
+        if not monitor_guids:
+            print("Error: No monitor EntityGUIDs found for any of the specified stacks")
+            return []
 
         print(f"Total monitor EntityGUIDs to apply downtime: {len(monitor_guids)}")
-        return monitor_guids.unique()  # Remove duplicates while preserving order
+        return monitor_guids
 
     except Exception as e:
         print(f"Error fetching monitors: {e}")
