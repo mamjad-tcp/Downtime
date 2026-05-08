@@ -63,18 +63,18 @@ def get_monitor_guids(api_key, account_id, stack_names):
 
     print("Fetching monitor EntityGUIDs from NewRelic using NRQL query...")
 
-query = f"""
-{{
-  actor {{
-    nrql(
-      accounts: [{int(account_id)}],
-      query: "FROM SyntheticCheck SELECT entityGuid, monitorName WHERE entityGuid IS NOT NULL AND monitorName IS NOT NULL AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR', 'SCRIPT_API', 'SCRIPT_BROWSER') SINCE 1 hour ago LIMIT MAX"
-    ) {{
-      results
+    query = f"""
+    {{
+      actor {{
+        nrql(
+          accounts: [{int(account_id)}],
+          query: "FROM SyntheticCheck SELECT entityGuid, monitorName WHERE entityGuid IS NOT NULL AND monitorName IS NOT NULL AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR', 'SCRIPT_API', 'SCRIPT_BROWSER') SINCE 1 hour ago LIMIT MAX"
+        ) {{
+          results
+        }}
+      }}
     }}
-  }}
-}}
-"""
+    """
 
     try:
         result = execute_graphql(api_key, query)
