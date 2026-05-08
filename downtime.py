@@ -58,93 +58,26 @@ def load_muting_rule_ids(ticket):
 
 
 # ---------------- MONITOR GUID FETCHING ----------------
-def get_monitor_guids(api_key, stack_names):
-    """
-    Fetch monitor EntityGUIDs from NewRelic NRQL query based on stack names.
-    
-    Args:
-        api_key: NewRelic API key
-        stack_names: List of stack names to search for
-    
-    Returns:
-        List of monitor EntityGUIDs that match the stack names
-    """
+def get_monitor_guids(api_key, account_id, stack_names):
     monitor_guids = []
     all_monitors = []
-    
-    print("Fetching monitor EntityGUIDs from NewRelic using NRQL query...")
-    
-    # NRQL query to fetch synthetic monitors
-    query = """
-    {
-      actor {
-        nrql(query: "FROM SyntheticCheck SELECT entityGuid, monitorName WHERE entityGuid like '%' AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR') SINCE 1 hour ago LIMIT MAX") {
-          results
-        }
-      }
-    }
-    """
-    
-    try:
-        result = execute_graphql(api_key, query)
-        
-        if result.get("errors"):
-            print(f"GraphQL Error: {result.get('errors')}")
-            raise Exception("Failed to fetch monitors from NRQL query")
-        
-        results = result.get("data", {}).get("actor", {}).get("nrql", {}).get("results", [])
-        
-        print(f"Total results from NRQL query: {len(results)}")
-        
-        # Process results and deduplicate
-        seen_guids = set()
-        for item in results:
-            entity_guid = item.get("entityGuid")
-            monitor_name = item.get("monitorName")
-            
-            # Deduplicate by entity GUID
-            if entity_guid and entity_guid not in seen_guids:
-                seen_guids.add(entity_guid)
-                all_monitors.append({
-                    "guid": entity_guid,
-                    "name": monitor_name
-                })
-        
-        print(f"Total unique monitors found: {len(all_monitors)}")
-        
-        # Filter monitors by stack names
-        print(f"Filtering monitors by stack names: {stack_names}")
-        
-        for stack_name in stack_names:
-            stack_lower = stack_name.lower()
-            matched_monitors = []
-            
-            for monitor in all_monitors:
-                monitor_name = monitor.get("name", "").lower()
-                monitor_guid = monitor.get("guid")
-                
-                if stack_lower in monitor_name:
-                    matched_monitors.append((monitor_guid, monitor.get("name")))
-            
-            if matched_monitors:
-                print(f"Stack '{stack_name}' matched {len(matched_monitors)} monitor(s):")
-                for guid, name in matched_monitors:
-                    print(f"  - {name} (EntityGUID: {guid})")
-                    monitor_guids.append(guid)
-            else:
-                print(f"Warning: No monitors found for stack '{stack_name}'")
-        
-        if not monitor_guids:
-            print("Error: No monitor EntityGUIDs found for any of the specified stacks")
-            sys.exit(1)
-        
-        print(f"Total monitor EntityGUIDs to apply downtime: {len(monitor_guids)}")
-        return monitor_guids
-        
-    except Exception as e:
-        print(f"Error fetching monitors: {e}")
-        raise
 
+    print("Fetching monitor EntityGUIDs from NewRelic using NRQL query...")
+
+    query = f"""
+    {{
+      actor {{
+        nrql(
+          accounts: [{account_id}],
+          query: "FROM SyntheticCheck SELECT entityGuid, monitorName WHERE entityGuid like '%' AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR') SINCE 1 hour ago LIMIT MAX"
+        ) {{
+          results
+        }}
+      }}
+    }}
+    """
+
+    result = execute_graphql(api_key, query)
 
 # ---------------- CREATE ----------------
 def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, monitor_guids):
