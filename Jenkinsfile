@@ -1,0 +1,162 @@
+pipeline{
+    agent any 
+
+    environment{
+        NEWRELIC_TOKEN = credentials('tcp-newrelic-key')
+        APP_CONDITIONID = '44735169'
+        ADM_CONDITIONID = '44760251'
+        AWS_HOST_CONDITIONID = '44735098'
+        TARGET_GROUP_CONDITIONID = '55638202'
+        SANDBOX_APP_CONDITIONID = '52535955'
+        SANDBOX_ADM_CONDITIONID = '52535889'
+        SANDBOX_SYNTHETIC_CONDITIONID = '4081891'
+    }
+
+    parameters {
+    string(name: 'BRANCH', defaultValue: 'main', description: 'Branch To Build')
+    choice(name: 'CONDITION', choices: ['apply', 'destroy'], description: 'Env for deployment')
+    extendedChoice(
+        name: 'MUTING_ENVIRONMENT',
+        description: 'Select muting environment(s)',
+        type: 'PT_CHECKBOX',
+        multiSelectDelimiter: ',',
+        value: 'Sandbox,App,Admin',
+        defaultValue: ''
+        )
+    string(name: 'START_TIME', defaultValue: '21:00:00', description: 'Set the Start time of Downtime. Add Time in 24 hrs')
+    string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD')
+    string(name: 'END_TIME', defaultValue: '23:45:00', description: 'Set the End time of Downtime. Add Time in 24 hrs')
+    string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. YYYY-MM-DD')
+    extendedChoice(
+        name: 'STACKS_NAME',
+        description: 'Stacks Name (multi-select)',
+        type: 'PT_CHECKBOX',
+        multiSelectDelimiter: ',',
+        value: '''
+            Group-1,
+            Group-10,
+            Group-10-2,
+            Group-12,
+            Group-2,
+            Group-3,
+            Group-4,
+            Group-5,
+            Group-PHR-1,
+            Group-PHR-2,
+            Group-PHR-3,
+            Group-PHR-4,
+            Group-PHR-5,
+            Group-PHR-6,
+            Group-PHR-7,
+            Group-PHR-8,
+            Group-PHR-9,
+            Group-Prod01,
+            Group-Prod03,
+            Group-Prod05,
+            Group-Prod07,
+            Group-Prod09,
+            Group-Prod15,
+            Group-Prod24,
+            Group-Prod25,
+            Group-Prod29,
+            Group-Prod30,
+            Group-Prod33,
+            Group-Prod34,
+            Group-Prod35,
+            Group-Prod36,
+            Group-Prod37,
+            Group-Prod38,
+            Group-Prod39,
+            Group-Prod43,
+            Group-Prod60,
+            Group-Prod61,
+            Group-Prod62,
+            Group-Prod63,
+            Group-Prod64,
+            Group-Prod65,
+            Group-Prod66,
+            Group-Prod67,
+            Group-Prod68,
+            tcp70alpha,
+            Sandbox-Group1,
+            Sandbox-Group10,
+            Sandbox-Group12,
+            Sandbox-Group3,
+            Sandbox-Group4,
+            Sandbox-Prismhr2,
+            Sandbox-Prod05,
+            Sandbox-Prod33,
+            Sandbox-Prod36,
+            Sandbox-Prod37,
+            Sandbox-Prod50,
+            Sandbox2-Prod37
+        '''
+    )
+
+    string(name: 'TICKET', defaultValue: 'DEVOPS-12345', description: 'Ticket Number for Backend Configuration/Reference')
+    }
+
+    stage('Build selection payload') {
+  steps {
+    script {
+      // 1) Parse selected environments (Extended Choice returns comma-separated string)
+      List<String> selectedEnvs = (params.MUTING_ENVIRONMENT ?: '')
+        .split(/\s*,\s*/)
+        .collect { it.trim() }
+        .findAll { it }
+
+      // 2) Build prod comma-separated string from stacks
+      String prodCsv = (params.STACKS_NAME ?: '')
+        .split(/\s*,\s*/)
+        .collect { it.trim() }
+        .findAll { it }
+        .join(',')
+
+      // 3) Build condition IDs list based on selected environments
+      List<String> conditionIds = []
+
+      if (selectedEnvs.contains('Sandbox')) {
+        conditionIds += [
+          env.SANDBOX_APP_CONDITIONID,
+          env.SANDBOX_ADM_CONDITIONID,
+          env.SANDBOX_SYNTHETIC_CONDITIONID
+        ]
+      }
+
+      if (selectedEnvs.contains('Admin')) {
+        conditionIds += [
+          env.ADM_CONDITIONID,
+          env.AWS_HOST_CONDITIONID,
+          env.TARGET_GROUP_CONDITIONID
+        ]
+      }
+
+      if (selectedEnvs.contains('App')) {
+        conditionIds += [
+          env.APP_CONDITIONID,
+          env.AWS_HOST_CONDITIONID,
+          env.TARGET_GROUP_CONDITIONID
+        ]
+      }
+
+      // Optional: remove duplicates while preserving order
+      conditionIds = conditionIds.findAll { it } // remove null/empty
+      conditionIds = conditionIds.toUnique()
+
+      // Export if you need later stages to use them as strings
+      env.PROD_CSV = prodCsv
+      env.CONDITION_IDS = conditionIds.join(',')
+
+      // 4) Print info to console
+      echo "MUTING_ENVIRONMENT (raw): ${params.MUTING_ENVIRONMENT}"
+      echo "MUTING_ENVIRONMENT (list): ${selectedEnvs}"
+
+      echo "STACKS_NAME (raw): ${params.STACKS_NAME}"
+      echo "PROD_CSV: ${env.PROD_CSV}"
+
+      echo "Condition IDs (list): ${conditionIds}"
+      echo "CONDITION_IDS (csv): ${env.CONDITION_IDS}"
+    }
+  }
+}
+}
