@@ -1,5 +1,10 @@
 pipeline{
-    agent any 
+    agent {
+        docker {
+            image 'python:3.9-slim'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    } 
 
     environment{
         NEWRELIC_TOKEN = credentials('tcp-newrelic-key')
@@ -97,6 +102,14 @@ pipeline{
     string(name: 'TICKET', defaultValue: 'DEVOPS-12345', description: 'Ticket Number for Backend Configuration/Reference')
     }
 stages{
+    stage('Install Dependencies') {
+      steps {
+        sh '''
+          pip install --no-cache-dir requests
+        '''
+      }
+    }
+
     stage('Build selection payload') {
       steps {
         script {
