@@ -279,6 +279,16 @@ if __name__ == "__main__":
 
         if errors:
             print(f"Error creating downtime: {errors}")
+            error_msg = errors[0].get("message") if errors else "Unknown error"
+            error_class = errors[0].get("extensions", {}).get("errorClass") if errors else ""
+            print(f"\nError Details:")
+            print(f"  Message: {error_msg}")
+            print(f"  Error Class: {error_class}")
+            print(f"\nTroubleshooting:")
+            if "ACCESS_DENIED" in str(error_class):
+                print("  - The API key does not have permission to create synthetic downtime")
+                print("  - Verify the API key has 'Synthetics' permissions enabled")
+                print("  - Check that the API key is a 'User' API key, not a 'License' key")
             sys.exit(1)
 
         if response_data and response_data.get("guid"):

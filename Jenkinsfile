@@ -3,7 +3,7 @@ pipeline{
 
     environment{
         NEWRELIC_TOKEN = credentials('tcp-newrelic-key')
-        TCP_ACCOUNT_ID = '4473520'
+        TCP_ACCOUNT_ID = '3174604'
         APP_CONDITIONID = '44735169'
         ADM_CONDITIONID = '44760251'
         AWS_HOST_CONDITIONID = '44735098'
