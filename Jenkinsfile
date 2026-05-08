@@ -97,6 +97,27 @@ pipeline{
     string(name: 'TICKET', defaultValue: 'DEVOPS-12345', description: 'Ticket Number for Backend Configuration/Reference')
     }
 stages{
+    stage('Install Dependencies') {
+      steps {
+        sh '''
+          # Check if Python is installed, if not install it
+          if ! command -v python3 &> /dev/null; then
+            echo "Installing Python3..."
+            apt-get update
+            apt-get install -y python3 python3-pip
+          else
+            echo "Python3 is already installed"
+            python3 --version
+          fi
+          
+          # Install required Python packages
+          echo "Installing Python dependencies..."
+          pip3 install --upgrade pip
+          pip3 install requests
+        '''
+      }
+    }
+
     stage('Build selection payload') {
       steps {
         script {
@@ -165,46 +186,28 @@ stages{
             echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
             withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
               sh '''
-                docker run --rm \
-                  -v $WORKSPACE:/workspace \
-                  -w /workspace \
-                  -e API_KEY="$API_KEY" \
-                  -e TCP_ACCOUNT_ID="$TCP_ACCOUNT_ID" \
-                  -e TICKET="$TICKET" \
-                  -e START_DATE="$START_DATE" \
-                  -e START_TIME="$START_TIME" \
-                  -e END_DATE="$END_DATE" \
-                  -e END_TIME="$END_TIME" \
-                  -e PROD_CSV="$PROD_CSV" \
-                  -e MUTING_ENVIRONMENT_CSV="$MUTING_ENVIRONMENT_CSV" \
-                  python:3.9-slim bash -c "pip install requests && python downtime.py \
-                    \$API_KEY \
-                    \$TCP_ACCOUNT_ID \
-                    apply \
-                    \$TICKET \
-                    \$START_DATE \
-                    \$START_TIME \
-                    \$END_DATE \
-                    \$END_TIME \
-                    \"\$PROD_CSV\" \
-                    \"\$MUTING_ENVIRONMENT_CSV\""
+                python3 downtime.py \
+                  $API_KEY \
+                  $TCP_ACCOUNT_ID \
+                  apply \
+                  $TICKET \
+                  $START_DATE \
+                  $START_TIME \
+                  $END_DATE \
+                  $END_TIME \
+                  "$PROD_CSV" \
+                  "$MUTING_ENVIRONMENT_CSV"
               '''
             }
           } else if (params.CONDITION == 'destroy') {
             echo "Destroying downtime for prods: ${env.PROD_CSV}"
             withEnv(['API_KEY=' + env.NEWRELIC_TOKEN]) {
               sh '''
-                docker run --rm \
-                  -v $WORKSPACE:/workspace \
-                  -w /workspace \
-                  -e API_KEY="$API_KEY" \
-                  -e TCP_ACCOUNT_ID="$TCP_ACCOUNT_ID" \
-                  -e TICKET="$TICKET" \
-                  python:3.9-slim bash -c "pip install requests && python downtime.py \
-                    \$API_KEY \
-                    \$TCP_ACCOUNT_ID \
-                    destroy \
-                    \$TICKET"
+                python3 downtime.py \
+                  $API_KEY \
+                  $TCP_ACCOUNT_ID \
+                  destroy \
+                  $TICKET
               '''
             }
           } else {
