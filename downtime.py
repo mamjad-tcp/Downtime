@@ -115,7 +115,7 @@ query = f"""
                     monitor_guids.append(monitor_guid)
 
         print(f"Total monitor EntityGUIDs to apply downtime: {len(monitor_guids)}")
-        return monitor_guids
+        return monitor_guids.unique()  # Remove duplicates while preserving order
 
     except Exception as e:
         print(f"Error fetching monitors: {e}")
