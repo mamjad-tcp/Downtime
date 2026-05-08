@@ -193,7 +193,7 @@ def create_muting_rule(api_key, account_id, name, condition_ids):
 
     mutation = f"""
     mutation {{
-      alertsCreateMutingRule(
+      alertsMutingRuleCreate(
         accountId: {account_id},
         name: "{name}",
         conditionIds: [{condition_ids_string}]
@@ -211,7 +211,7 @@ def destroy_muting_rule(api_key, account_id, muting_rule_id):
 
     mutation = f"""
     mutation {{
-      alertsDeleteMutingRule(
+      alertsMutingRuleDelete(
         id: {muting_rule_id}
       ) {{
         id
