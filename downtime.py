@@ -68,7 +68,7 @@ def get_monitor_guids(api_key, account_id, stack_names):
       actor {{
         nrql(
           accounts: [{account_id}],
-          query: "FROM SyntheticCheck SELECT entityGuid, monitorName WHERE entityGuid like '%' AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR') SINCE 1 hour ago LIMIT MAX"
+          query: "FROM SyntheticCheck SELECT uniques(entityGuid),uniques(monitorName) WHERE entityGuid like '%'  AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR','SCRIPT_API','SCRIPT_BROWSER') SINCE 1 hour ago limit max"
         ) {{
           results
         }}
