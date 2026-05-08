@@ -187,20 +187,62 @@ def destroy_synthetic_downtime(api_key, account_id, downtime_guid):
     return result
 
 
-def create_muting_rule(api_key, account_id, name, condition_ids):
-
-    condition_ids_string = ', '.join([f'"{cid.strip()}"' for cid in condition_ids if cid.strip()])
-
+def create_muting_rule(api_key, account_id, name, start_time, end_time, timezone, condition_names):
+    """
+    Create a muting rule with schedule and conditions.
+    
+    Args:
+        api_key: NewRelic API key
+        account_id: Account ID
+        name: Name of the muting rule
+        start_time: Start time in format "yyyy-MM-ddTHH:mm:ss"
+        end_time: End time in format "yyyy-MM-ddTHH:mm:ss"
+        timezone: Timezone (e.g., "America/Chicago")
+        condition_names: List of condition names to mute
+    """
+    
+    # Build condition objects for each condition name
+    conditions_array = []
+    for condition_name in condition_names:
+        conditions_array.append(f'''
+        {{
+          attribute: "conditionName"
+          operator: EQUALS
+          values: "{condition_name}"
+        }}
+        ''')
+    
+    conditions_str = ','.join(conditions_array)
+    
     mutation = f"""
     mutation {{
       alertsMutingRuleCreate(
-        accountId: {account_id},
-        name: "{name}",
-        conditionIds: [{condition_ids_string}]
+        accountId: {account_id}
+        rule: {{
+          condition: {{
+            conditions: [{conditions_str}]
+            operator: OR
+          }}
+          enabled: true
+          name: "{name}"
+          schedule: {{
+            startTime: "{start_time}"
+            endTime: "{end_time}"
+            timeZone: "{timezone}"
+          }}
+        }}
       ) {{
         id
         name
-        conditionIds
+        enabled
+        condition {{
+          operator
+        }}
+        schedule {{
+          startTime
+          endTime
+          timeZone
+        }}
       }}
     }}
     """
@@ -212,6 +254,7 @@ def destroy_muting_rule(api_key, account_id, muting_rule_id):
     mutation = f"""
     mutation {{
       alertsMutingRuleDelete(
+        accountId: {account_id}
         id: {muting_rule_id}
       ) {{
         id
@@ -301,23 +344,29 @@ if __name__ == "__main__":
         muting_rule_ids = []
         for env in muting_envs:
             muting_rule_name = f"{ticket}_muting_{env}"
-            # Note: You need to map environments to condition IDs or get them from Jenkins
-            # This is a placeholder - adjust based on your actual condition ID mappings
+            
             result = create_muting_rule(
                 api_key,
                 account_id,
                 muting_rule_name,
-                [env]  # env should be a condition ID
+                start_datetime,
+                end_datetime,
+                "America/Chicago",
+                [env]  # env is the condition name
             )
 
-            print(f"Muting rule creation response:")
+            print(f"Muting rule creation response for '{env}':")
             print(json.dumps(result, indent=2))
 
-            response_data = result.get("data", {}).get("alertsCreateMutingRule")
+            response_data = result.get("data", {}).get("alertsMutingRuleCreate")
             errors = result.get("errors")
 
             if errors:
-                print(f"Error creating muting rule: {errors}")
+                error_msg = errors[0].get("message") if errors else "Unknown error"
+                error_class = errors[0].get("extensions", {}).get("errorClass") if errors else ""
+                print(f"Error creating muting rule '{env}': {error_msg}")
+                if "ACCESS_DENIED" in str(error_class):
+                    print(f"  - API key lacks permission to create muting rules")
             elif response_data and response_data.get("id"):
                 muting_rule_id = response_data.get("id")
                 muting_rule_ids.append(str(muting_rule_id))
