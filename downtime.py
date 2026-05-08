@@ -60,7 +60,7 @@ def load_muting_rule_ids(ticket):
 # ---------------- MONITOR GUID FETCHING ----------------
 def get_monitor_guids(api_key, stack_names):
     """
-    Fetch monitor EntityGUIDs from NewRelic GraphQL API based on stack names.
+    Fetch monitor EntityGUIDs from NewRelic NRQL query based on stack names.
     
     Args:
         api_key: NewRelic API key
@@ -70,21 +70,16 @@ def get_monitor_guids(api_key, stack_names):
         List of monitor EntityGUIDs that match the stack names
     """
     monitor_guids = []
+    all_monitors = []
     
-    print("Fetching monitor EntityGUIDs from NewRelic GraphQL API...")
+    print("Fetching monitor EntityGUIDs from NewRelic using NRQL query...")
     
-    # Query to fetch synthetic monitors
+    # NRQL query to fetch synthetic monitors
     query = """
     {
       actor {
-        entitySearch(query: "type = 'MONITOR' or type = 'API' or type = 'PING'") {
-          results {
-            entities {
-              guid
-              name
-              type
-            }
-          }
+        nrql(query: "FROM SyntheticCheck SELECT entityGuid, monitorName WHERE entityGuid like '%' AND type IN ('API_TEST', 'SIMPLE', 'STEP_MONITOR') SINCE 1 hour ago LIMIT MAX") {
+          results
         }
       }
     }
@@ -95,11 +90,27 @@ def get_monitor_guids(api_key, stack_names):
         
         if result.get("errors"):
             print(f"GraphQL Error: {result.get('errors')}")
-            raise Exception("Failed to fetch monitors from GraphQL API")
+            raise Exception("Failed to fetch monitors from NRQL query")
         
-        entities = result.get("data", {}).get("actor", {}).get("entitySearch", {}).get("results", {}).get("entities", [])
+        results = result.get("data", {}).get("actor", {}).get("nrql", {}).get("results", [])
         
-        print(f"Total monitors found: {len(entities)}")
+        print(f"Total results from NRQL query: {len(results)}")
+        
+        # Process results and deduplicate
+        seen_guids = set()
+        for item in results:
+            entity_guid = item.get("entityGuid")
+            monitor_name = item.get("monitorName")
+            
+            # Deduplicate by entity GUID
+            if entity_guid and entity_guid not in seen_guids:
+                seen_guids.add(entity_guid)
+                all_monitors.append({
+                    "guid": entity_guid,
+                    "name": monitor_name
+                })
+        
+        print(f"Total unique monitors found: {len(all_monitors)}")
         
         # Filter monitors by stack names
         print(f"Filtering monitors by stack names: {stack_names}")
@@ -108,12 +119,12 @@ def get_monitor_guids(api_key, stack_names):
             stack_lower = stack_name.lower()
             matched_monitors = []
             
-            for entity in entities:
-                entity_name = entity.get("name", "").lower()
-                entity_guid = entity.get("guid")
+            for monitor in all_monitors:
+                monitor_name = monitor.get("name", "").lower()
+                monitor_guid = monitor.get("guid")
                 
-                if stack_lower in entity_name:
-                    matched_monitors.append((entity_guid, entity.get("name")))
+                if stack_lower in monitor_name:
+                    matched_monitors.append((monitor_guid, monitor.get("name")))
             
             if matched_monitors:
                 print(f"Stack '{stack_name}' matched {len(matched_monitors)} monitor(s):")
