@@ -57,7 +57,6 @@ def load_muting_rule_ids(ticket):
     return []
 
 
-# ---------------- MONITOR GUID FETCHING ----------------
 def get_monitor_guids(api_key, account_id, stack_names):
     monitor_guids = []
     all_monitors = []
@@ -77,8 +76,45 @@ def get_monitor_guids(api_key, account_id, stack_names):
     }}
     """
 
-    result = execute_graphql(api_key, query)
+    try:
+        result = execute_graphql(api_key, query)
 
+        if result.get("errors"):
+            print(f"GraphQL Error: {result.get('errors')}")
+            return []
+
+        results = result.get("data", {}).get("actor", {}).get("nrql", {}).get("results", [])
+
+        print(f"Total results from NRQL query: {len(results)}")
+
+        seen_guids = set()
+        for item in results:
+            entity_guid = item.get("entityGuid")
+            monitor_name = item.get("monitorName")
+
+            if entity_guid and entity_guid not in seen_guids:
+                seen_guids.add(entity_guid)
+                all_monitors.append({
+                    "guid": entity_guid,
+                    "name": monitor_name
+                })
+
+        for stack_name in stack_names:
+            stack_lower = stack_name.lower()
+
+            for monitor in all_monitors:
+                monitor_name = (monitor.get("name") or "").lower()
+                monitor_guid = monitor.get("guid")
+
+                if stack_lower in monitor_name and monitor_guid:
+                    monitor_guids.append(monitor_guid)
+
+        print(f"Total monitor EntityGUIDs to apply downtime: {len(monitor_guids)}")
+        return monitor_guids
+
+    except Exception as e:
+        print(f"Error fetching monitors: {e}")
+        return []
 # ---------------- CREATE ----------------
 def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, monitor_guids):
 
