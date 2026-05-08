@@ -95,7 +95,7 @@ pipeline{
 
     string(name: 'TICKET', defaultValue: 'DEVOPS-12345', description: 'Ticket Number for Backend Configuration/Reference')
     }
-
+stages{
     stage('Build selection payload') {
   steps {
     script {
@@ -158,5 +158,6 @@ pipeline{
       echo "CONDITION_IDS (csv): ${env.CONDITION_IDS}"
     }
   }
+}
 }
 }
