@@ -41,15 +41,15 @@ def load_synthetic_downtime_id(ticket):
 
 
 def save_muting_rule_ids(ticket, muting_rule_ids):
-    """Save muted condition IDs to file"""
+    """Save muting rule IDs to file"""
     filename = f"{ticket}_muting_rules_id.txt"
     with open(filename, 'w') as f:
         f.write('\n'.join(muting_rule_ids))
-    print(f"Saved {len(muting_rule_ids)} muted condition IDs to {filename}")
+    print(f"Saved {len(muting_rule_ids)} muting rule IDs to {filename}")
 
 
 def load_muting_rule_ids(ticket):
-    """Load muted condition IDs from file"""
+    """Load muting rule IDs from file"""
     filename = f"{ticket}_muting_rules_id.txt"
     if os.path.exists(filename):
         with open(filename, 'r') as f:
@@ -187,44 +187,84 @@ def destroy_synthetic_downtime(api_key, account_id, downtime_guid):
     return result
 
 
-def mute_condition(api_key, account_id, condition_id, mute):
+def create_muting_rule(api_key, account_id, name, start_time, end_time, timezone, condition_names):
     """
-    Mute or unmute an alert condition.
+    Create a muting rule with schedule and conditions.
     
     Args:
         api_key: NewRelic API key
         account_id: Account ID
-        condition_id: Condition ID to mute/unmute
-        mute: Boolean - True to mute, False to unmute
+        name: Name of the muting rule
+        start_time: Start time in format "yyyy-MM-ddTHH:mm:ss"
+        end_time: End time in format "yyyy-MM-ddTHH:mm:ss"
+        timezone: Timezone (e.g., "America/Chicago")
+        condition_names: List of condition names to mute
     """
+    
+    # Build condition objects for each condition name
+    conditions_array = []
+    for condition_name in condition_names:
+        conditions_array.append(f'''
+        {{
+          attribute: "conditionId"
+          operator: EQUALS
+          values: "{condition_name}"
+        }}
+        ''')
+    
+    conditions_str = ','.join(conditions_array)
     
     mutation = f"""
     mutation {{
-      alertsUpdateCondition(
-        accountId: {account_id},
-        conditionId: {condition_id},
-        muted: {str(mute).lower()}
+      alertsMutingRuleCreate(
+        accountId: {account_id}
+        rule: {{
+          condition: {{
+            conditions: [{conditions_str}]
+            operator: OR
+          }}
+          enabled: true
+          name: "{name}"
+          schedule: {{
+            startTime: "{start_time}"
+            endTime: "{end_time}"
+            timeZone: "{timezone}"
+          }}
+        }}
       ) {{
         id
         name
-        muted
+        enabled
+        condition {{
+          operator
+        }}
+        schedule {{
+          startTime
+          endTime
+          timeZone
+        }}
       }}
     }}
     """
-    
+
     return execute_graphql(api_key, mutation)
 
+def destroy_muting_rule(api_key, account_id, muting_rule_id):
 
-def unmute_condition(api_key, account_id, condition_id):
+    mutation = f"""
+    mutation {{
+      alertsMutingRuleDelete(
+        accountId: {account_id}
+        id: {muting_rule_id}
+      ) {{
+        id
+      }}
+    }}
     """
-    Unmute an alert condition.
-    
-    Args:
-        api_key: NewRelic API key
-        account_id: Account ID
-        condition_id: Condition ID to unmute
-    """
-    return mute_condition(api_key, account_id, condition_id, False)
+
+    result = execute_graphql(api_key, mutation)
+    print("Delete result:", json.dumps(result, indent=2))
+    return result
 
 
 # ---------------- MAIN ----------------
@@ -236,13 +276,14 @@ if __name__ == "__main__":
     ticket = sys.argv[4]
 
     if condition == "apply":
-        # Arguments: api_key, account_id, condition, ticket, start_date, start_time, end_date, end_time, stacks_name, muting_environment
+        # Arguments: api_key, account_id, condition, ticket, start_date, start_time, end_date, end_time, stacks_name, muting_environment, condition_ids
         start_date = sys.argv[5]
         start_time = sys.argv[6]
         end_date = sys.argv[7]
         end_time = sys.argv[8]
         stacks_name = sys.argv[9]  # comma-separated list
-        muting_environment = sys.argv[10]  # comma-separated list
+        muting_environment = sys.argv[10]  # comma-separated list (for logging)
+        condition_ids = sys.argv[11] if len(sys.argv) > 11 else ""  # comma-separated list of condition IDs
 
         # Combine date and time in format: yyyy-MM-ddTHH:mm:ss
         start_datetime = f"{start_date}T{start_time}"
@@ -251,12 +292,16 @@ if __name__ == "__main__":
         # Parse stack names
         stack_names = [s.strip() for s in stacks_name.split(",") if s.strip()]
         
-        # Parse muting environments (condition IDs mapping)
+        # Parse muting environments for logging
         muting_envs = [m.strip() for m in muting_environment.split(",") if m.strip()]
+        
+        # Parse condition IDs for muting rules
+        condition_ids_list = [cid.strip() for cid in condition_ids.split(",") if cid.strip()]
 
         print(f"Creating downtime for ticket: {ticket}")
         print(f"Stacks: {stack_names}")
         print(f"Muting environments: {muting_envs}")
+        print(f"Condition IDs: {condition_ids_list}")
         print(f"Start: {start_datetime}")
         print(f"End: {end_datetime}")
 
@@ -302,32 +347,37 @@ if __name__ == "__main__":
 
         # Create muting rules
         muting_rule_ids = []
-        for env in muting_envs:
-            muting_rule_name = f"{ticket}_muting_{env}"
+        if condition_ids_list:
+            muting_rule_name = f"{ticket}_muting_rule"
             
-            result = mute_condition(
+            result = create_muting_rule(
                 api_key,
                 account_id,
-                env,
-                True
+                muting_rule_name,
+                start_datetime,
+                end_datetime,
+                "America/Chicago",
+                condition_ids_list
             )
 
-            print(f"Muting condition response for '{env}':")
+            print(f"Muting rule creation response:")
             print(json.dumps(result, indent=2))
 
-            response_data = result.get("data", {}).get("alertsUpdateCondition")
+            response_data = result.get("data", {}).get("alertsMutingRuleCreate")
             errors = result.get("errors")
 
             if errors:
                 error_msg = errors[0].get("message") if errors else "Unknown error"
                 error_class = errors[0].get("extensions", {}).get("errorClass") if errors else ""
-                print(f"Error muting condition '{env}': {error_msg}")
+                print(f"Error creating muting rule: {error_msg}")
                 if "ACCESS_DENIED" in str(error_class):
-                    print(f"  - API key lacks permission to mute conditions")
+                    print(f"  - API key lacks permission to create muting rules")
             elif response_data and response_data.get("id"):
-                condition_id = response_data.get("id")
-                muting_rule_ids.append(str(condition_id))
-                print(f"Condition muted: {condition_id}")
+                muting_rule_id = response_data.get("id")
+                muting_rule_ids.append(str(muting_rule_id))
+                print(f"Muting rule created: {muting_rule_id}")
+        else:
+            print("No condition IDs provided, skipping muting rule creation")
 
         if muting_rule_ids:
             save_muting_rule_ids(ticket, muting_rule_ids)
@@ -355,18 +405,18 @@ if __name__ == "__main__":
         # Load and destroy muting rules
         muting_rule_ids = load_muting_rule_ids(ticket)
         if muting_rule_ids:
-            for condition_id in muting_rule_ids:
-                print(f"Unmuting condition: {condition_id}")
-                result = unmute_condition(api_key, account_id, condition_id)
+            for rule_id in muting_rule_ids:
+                print(f"Destroying muting rule: {rule_id}")
+                result = destroy_muting_rule(api_key, account_id, rule_id)
                 if result.get("data"):
-                    print(f"Condition {condition_id} unmuted successfully")
+                    print(f"Muting rule {rule_id} destroyed successfully")
             # Delete the file after successful destruction
             try:
                 os.remove(f"{ticket}_muting_rules_id.txt")
             except:
                 pass
         else:
-            print(f"No muted condition IDs found for ticket {ticket}")
+            print(f"No muting rule IDs found for ticket {ticket}")
 
     else:
         print(f"Unknown condition: {condition}. Use 'apply' or 'destroy'.")
