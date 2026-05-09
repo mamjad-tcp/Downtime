@@ -40,13 +40,13 @@ def save_synthetic_downtime_id(ticket, downtime_guid):
         print(f"Synthetic downtime GUID already present in {filename}")
 
 
-def load_synthetic_downtime_id(ticket):
-    """Load synthetic downtime GUID from file"""
+def load_synthetic_downtime_ids(ticket):
+    """Load all synthetic downtime GUIDs from file"""
     filename = f"{ticket}_synthetic_downtime_id.txt"
     if os.path.exists(filename):
         with open(filename, 'r') as f:
-            return f.read().strip()
-    return None
+            return [line.strip() for line in f.readlines() if line.strip()]
+    return []
 
 
 def save_muting_rule_ids(ticket, muting_rule_ids):
