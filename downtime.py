@@ -415,7 +415,7 @@ if __name__ == "__main__":
         print(f"Destroying downtime for ticket: {ticket}")
 
         # Load and destroy synthetic downtime
-        downtime_guid = load_synthetic_downtime_id(ticket)
+        downtime_guid = load_synthetic_downtime_ids(ticket)
         if downtime_guid:
             print(f"Destroying synthetic downtime: {downtime_guid}")
             result = destroy_synthetic_downtime(api_key, account_id, downtime_guid)
