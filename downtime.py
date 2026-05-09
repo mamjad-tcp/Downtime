@@ -410,22 +410,25 @@ if __name__ == "__main__":
             save_muting_rule_ids(ticket, muting_rule_ids)
 
     elif condition == "destroy":
-        # Arguments: api_key, account_id, condition, ticket
-
         print(f"Destroying downtime for ticket: {ticket}")
 
-        # Load and destroy synthetic downtime
-        downtime_guid = load_synthetic_downtime_ids(ticket)
-        if downtime_guid:
-            print(f"Destroying synthetic downtime: {downtime_guid}")
-            result = destroy_synthetic_downtime(api_key, account_id, downtime_guid)
-            if result.get("data"):
-                print("Synthetic downtime destroyed successfully")
-                # Delete the file after successful destruction
-                try:
-                    os.remove(f"{ticket}_synthetic_downtime_id.txt")
-                except:
-                    pass
+        # Load and destroy synthetic downtimes
+        downtime_guids = load_synthetic_downtime_ids(ticket)
+        if downtime_guids:
+            for downtime_guid in downtime_guids:
+                print(f"Destroying synthetic downtime: {downtime_guid}")
+                result = destroy_synthetic_downtime(api_key, account_id, downtime_guid)
+
+                errors = result.get("errors")
+                if errors:
+                    print(f"Error destroying synthetic downtime {downtime_guid}: {errors}")
+                elif result.get("data"):
+                    print(f"Synthetic downtime {downtime_guid} destroyed successfully")
+
+            try:
+                os.remove(f"{ticket}_synthetic_downtime_id.txt")
+            except:
+                pass
         else:
             print(f"No synthetic downtime GUID found for ticket {ticket}")
 
@@ -435,16 +438,19 @@ if __name__ == "__main__":
             for rule_id in muting_rule_ids:
                 print(f"Destroying muting rule: {rule_id}")
                 result = destroy_muting_rule(api_key, account_id, rule_id)
-                if result.get("data"):
+
+                errors = result.get("errors")
+                if errors:
+                    print(f"Error destroying muting rule {rule_id}: {errors}")
+                elif result.get("data"):
                     print(f"Muting rule {rule_id} destroyed successfully")
-            # Delete the file after successful destruction
+
             try:
                 os.remove(f"{ticket}_muting_rules_id.txt")
             except:
                 pass
         else:
             print(f"No muting rule IDs found for ticket {ticket}")
-
     else:
         print(f"Unknown condition: {condition}. Use 'apply' or 'destroy'.")
         sys.exit(1)
