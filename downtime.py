@@ -24,11 +24,20 @@ def execute_graphql(api_key, query):
 
 # ---------------- FILE UTILITIES ----------------
 def save_synthetic_downtime_id(ticket, downtime_guid):
-    """Save synthetic downtime GUID to file"""
+    """Append synthetic downtime GUID to file if not already present"""
     filename = f"{ticket}_synthetic_downtime_id.txt"
-    with open(filename, 'w') as f:
-        f.write(downtime_guid)
-    print(f"Saved synthetic downtime GUID to {filename}")
+    existing_ids = set()
+
+    if os.path.exists(filename):
+        with open(filename, 'r') as f:
+            existing_ids = {line.strip() for line in f.readlines() if line.strip()}
+
+    if downtime_guid not in existing_ids:
+        with open(filename, 'a') as f:
+            f.write(f"{downtime_guid}\n")
+        print(f"Appended synthetic downtime GUID to {filename}")
+    else:
+        print(f"Synthetic downtime GUID already present in {filename}")
 
 
 def load_synthetic_downtime_id(ticket):
@@ -41,11 +50,12 @@ def load_synthetic_downtime_id(ticket):
 
 
 def save_muting_rule_ids(ticket, muting_rule_ids):
-    """Save muting rule IDs to file"""
+    """Append muting rule IDs to file instead of overwriting"""
     filename = f"{ticket}_muting_rules_id.txt"
-    with open(filename, 'w') as f:
-        f.write('\n'.join(muting_rule_ids))
-    print(f"Saved {len(muting_rule_ids)} muting rule IDs to {filename}")
+    with open(filename, 'a') as f:
+        for rule_id in muting_rule_ids:
+            f.write(f"{rule_id}\n")
+    print(f"Appended {len(muting_rule_ids)} muting rule IDs to {filename}")
 
 
 def load_muting_rule_ids(ticket):
