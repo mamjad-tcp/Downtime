@@ -50,15 +50,15 @@ pipeline {
                                 ])
                             ],
                             string(defaultValue: '21:00:00', name: 'START_TIME', description: 'Set the Start time of Downtime. Add Time in 24 hrs'),
-                            string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD'),
+                            string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD ex. 2024-01-01'),
                             string(defaultValue: '23:45:00', name: 'END_TIME', description: 'Set the End time of Downtime. Add Time in 24 hrs'),
-                            string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. YYYY-MM-DD'),
+                            string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. YYYY-MM-DD ex. 2024-01-01'),
                             [
                                 $class: 'CascadeChoiceParameter',
                                 choiceType: 'PT_CHECKBOX',
                                 filterLength: 1,
                                 filterable: true,
-                                name: 'STACKS_NAME',
+                                name: 'STACK_NAME',
                                 randomName: 'choice-parameter-stacks-name',
                                 referencedParameters: 'CONDITION',
                                 script: scriptlerScript(isSandboxed: false, scriptlerBuilder: [
@@ -71,6 +71,53 @@ pipeline {
                             string(defaultValue: 'DEVOPS-12345', name: 'TICKET', description: 'Ticket Number for Backend Configuration/Reference')
                         ])
                     ])
+
+                    if (!params.CONDITION) {
+                        currentBuild.description = 'First run: parameters registered. Please run again.'
+                        error('Parameters were just registered. Please trigger the job again.')
+                    }
+                }
+            }
+        }
+
+        stage('Parameters Verification') {
+            steps {
+                script {
+                    currentBuild.displayName = "#${BUILD_ID} - ${params.CONDITION} - ${params.TICKET} - ${params.STACK_NAME}"
+
+                    def profiles = params.MUTING_ENVIRONMENT ? params.MUTING_ENVIRONMENT.tokenize(',') : []
+                    def ticket = params.TICKET
+
+                    env.TICKET_SUFFIXED = profiles ? "${ticket}-${profiles.join('-')}" : ticket
+
+                    env.SANDBOX            = profiles.contains('Sandbox') ? 'true' : 'false'
+                    env.APPLY_APP_MUTING   = profiles.contains('App')     ? 'true' : 'false'
+                    env.APPLY_ADMIN_MUTING = profiles.contains('Admin')   ? 'true' : 'false'
+
+                    if (params.CONDITION == 'apply') {
+                        if (params.STACK_NAME && params.STACK_NAME != 'N/A') {
+                            echo "Stack List is given"
+                            env.STACK_LIST = params.STACK_NAME.replace(',', '-')
+                        } else {
+                            echo "No stack provided, using default 'Prod00'"
+                            env.STACK_LIST = 'Prod00'
+                        }
+                        if (!params.START_DATE || !params.END_DATE) {
+                            error "Please provide the Start/End DATE"
+                        }
+                        echo "Start/End Date is Provided"
+                    } else if (params.CONDITION == 'destroy') {
+                        if (params.STACK_NAME && params.STACK_NAME != 'N/A') {
+                            echo "Stack List is given"
+                            env.STACK_LIST = params.STACK_NAME.replace(',', '-')
+                        } else {
+                            env.STACK_LIST = 'Prod00'
+                        }
+                    }
+
+                    echo "MUTING_ENVIRONMENT: ${profiles}"
+                    echo "Stack List: ${env.STACK_LIST}"
+                    echo "Ticket: ${env.TICKET_SUFFIXED}"
                 }
             }
         }
@@ -82,12 +129,6 @@ pipeline {
                         .split(/\s*,\s*/)
                         .collect { it.trim() }
                         .findAll { it }
-
-                    String prodCsv = (params.STACKS_NAME ?: '')
-                        .split(/\s*,\s*/)
-                        .collect { it.trim() }
-                        .findAll { it }
-                        .join(',')
 
                     List<String> conditionIds = []
 
@@ -101,16 +142,10 @@ pipeline {
                         conditionIds += [env.APP_CONDITIONID, env.AWS_HOST_CONDITIONID, env.TARGET_GROUP_CONDITIONID]
                     }
 
-                    // Deduplicate preserving order
                     def seen = new java.util.LinkedHashSet(conditionIds.findAll { it })
-                    conditionIds = new java.util.ArrayList(seen)
-
-                    env.PROD_CSV = prodCsv
-                    env.CONDITION_IDS = conditionIds.join(',')
+                    env.CONDITION_IDS = new java.util.ArrayList(seen).join(',')
                     env.MUTING_ENVIRONMENT_CSV = selectedEnvs.join(',')
 
-                    echo "MUTING_ENVIRONMENT: ${selectedEnvs}"
-                    echo "Stack Name: ${env.PROD_CSV}"
                     echo "CONDITION_IDS Selected: ${env.CONDITION_IDS}"
                 }
             }
@@ -120,7 +155,7 @@ pipeline {
             steps {
                 script {
                     if (params.CONDITION == 'apply') {
-                        echo "Applying downtime for Prods: ${env.PROD_CSV} with conditions: ${env.CONDITION_IDS}"
+                        echo "Applying downtime for Stacks: ${env.STACK_LIST} with conditions: ${env.CONDITION_IDS}"
                         sh '''
                             python3 downtime.py \
                               $NEWRELIC_TOKEN \
@@ -131,12 +166,12 @@ pipeline {
                               $START_TIME \
                               $END_DATE \
                               $END_TIME \
-                              "$PROD_CSV" \
+                              "$STACK_LIST" \
                               "$MUTING_ENVIRONMENT_CSV" \
                               "$CONDITION_IDS"
                         '''
                     } else if (params.CONDITION == 'destroy') {
-                        echo "Destroying downtime for prods: ${env.PROD_CSV}"
+                        echo "Destroying downtime for Stacks: ${env.STACK_LIST}"
                         sh '''
                             python3 downtime.py \
                               $NEWRELIC_TOKEN \
