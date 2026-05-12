@@ -49,7 +49,7 @@ stage('Set Parameters') {
                         referencedParameters: 'CONDITION',
                         script: [
                             $class: 'org.biouno.unochoice.model.ScriptlerScript',
-                            scriptlerScriptId: 'newrelic_downtime_stacks.groovy',
+                            scriptlerScriptId: 'LoadStackNames.groovy',
                             parameters: [],
                             propagateParams: false
                         ]
