@@ -21,12 +21,53 @@ pipeline {
                         parameters([
                             string(name: 'BRANCH', defaultValue: 'main', description: 'Branch To Build'),
                             choice(choices: ['apply', 'destroy'], description: 'Env for deployment', name: 'CONDITION'),
-                            [$class: 'ChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: false, name: 'MUTING_ENVIRONMENT', randomName: 'choice-parameter-2578984402057198', script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [builderId: '1751381611548_11', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_stacks.groovy'])],
+                            [
+                                $class: 'DynamicReferenceParameter',
+                                choiceType: 'ET_FORMATTED_HTML',
+                                name: 'VISIBILITY_CONTROL',
+                                randomName: 'choice-parameter-visibility',
+                                referencedParameters: 'CONDITION',
+                                script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [
+                                    builderId: '1751381611548_13',
+                                    parameters: [],
+                                    propagateParams: false,
+                                    scriptId: 'newrelic_downtime_visibility.groovy'
+                                ]),
+                                omitValueField: true
+                            ],
+                            [
+                                $class: 'ChoiceParameter',
+                                choiceType: 'PT_CHECKBOX',
+                                filterLength: 1,
+                                filterable: false,
+                                name: 'MUTING_ENVIRONMENT',
+                                randomName: 'choice-parameter-2578984402057198',
+                                script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [
+                                    builderId: '1751381611548_11',
+                                    parameters: [],
+                                    propagateParams: false,
+                                    scriptId: 'newrelic_downtime_environment.groovy'
+                                ])
+                            ],
                             string(defaultValue: '21:00:00', name: 'START_TIME', description: 'Set the Start time of Downtime. Add Time in 24 hrs'),
                             string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD'),
                             string(defaultValue: '23:45:00', name: 'END_TIME', description: 'Set the End time of Downtime. Add Time in 24 hrs'),
                             string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. YYYY-MM-DD'),
-                            [$class: 'CascadeChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: true, name: 'STACKS_NAME', randomName: 'choice-parameter-stacks-name', referencedParameters: 'CONDITION', script: scriptlerScript(isSandboxed: false, scriptlerBuilder: [builderId: '1751381611548_12', parameters: [], propagateParams: false, scriptId: 'LoadStackNames.groovy'])],
+                            [
+                                $class: 'CascadeChoiceParameter',
+                                choiceType: 'PT_CHECKBOX',
+                                filterLength: 1,
+                                filterable: true,
+                                name: 'STACKS_NAME',
+                                randomName: 'choice-parameter-stacks-name',
+                                referencedParameters: 'CONDITION',
+                                script: scriptlerScript(isSandboxed: false, scriptlerBuilder: [
+                                    builderId: '1751381611548_12',
+                                    parameters: [],
+                                    propagateParams: false,
+                                    scriptId: 'newrelic_downtime_stacks.groovy'
+                                ])
+                            ],
                             string(defaultValue: 'DEVOPS-12345', name: 'TICKET', description: 'Ticket Number for Backend Configuration/Reference')
                         ])
                     ])
