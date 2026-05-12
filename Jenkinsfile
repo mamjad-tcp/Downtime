@@ -33,7 +33,6 @@ pipeline {
                 }
             }
         }
-    }
 
         stage('Build selection payload') {
             steps {
@@ -111,3 +110,4 @@ pipeline {
             }
         }
     }
+}
