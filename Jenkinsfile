@@ -21,7 +21,7 @@ pipeline {
                         parameters([
                             string(name: 'BRANCH', defaultValue: 'main', description: 'Branch To Build'),
                             choice(choices: ['apply', 'destroy'], description: 'Env for deployment', name: 'CONDITION'),
-                            [$class: 'ChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: false, name: 'MUTING_ENVIRONMENT', randomName: 'choice-parameter-2578984402057198', script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [builderId: '1751381611548_11', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_environment.groovy'])],
+                            [$class: 'ChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: false, name: 'MUTING_ENVIRONMENT', randomName: 'choice-parameter-2578984402057198', script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [builderId: '1751381611548_11', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_stacks.groovy'])],
                             string(defaultValue: '21:00:00', name: 'START_TIME', description: 'Set the Start time of Downtime. Add Time in 24 hrs'),
                             string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD'),
                             string(defaultValue: '23:45:00', name: 'END_TIME', description: 'Set the End time of Downtime. Add Time in 24 hrs'),
