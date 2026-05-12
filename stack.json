@@ -175,10 +175,7 @@
     "group_tag": "Group-Prod68",
     "description": "Production 68"
   },
-  {
-    "group_tag": "tcp70alpha",
-    "description": "TCP 70 Alpha"
-  },
+
   {
     "group_tag": "Sandbox-Group1",
     "description": "Sandbox Group 1"
