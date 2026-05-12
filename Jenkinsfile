@@ -13,38 +13,26 @@ pipeline{
         SANDBOX_SYNTHETIC_CONDITIONID = '4081891'
     }
 
-parameters {
-    string(name: 'BRANCH', defaultValue: 'main', description: 'Branch To Build')
-    choice(choices: ['apply', 'destroy'], description: 'Env for deployment', name: 'CONDITION')
-    string(defaultValue: '21:00:00', name: 'START_TIME', description: 'Set the Start time of Downtime. Add Time in 24 hrs')
-    activeChoice choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: false, name: 'MUTING_ENVIRONMENT', randomName: 'choice-parameter-2578984402057198', script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [builderId: '1751381611548_11', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_environment.groovy'])
-    string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. Add Date in following formate YYYY-MM-DD ex. 2024-01-01')
-    string(defaultValue: '23:45:00', name: 'END_TIME', description: 'Set the End time of Downtime. Add Time in 24 hrs')
-    string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. Add Date in following formate YYYY-MM-DD ex. 2024-01-01')
-    [$class: 'CascadeChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: true, name: 'STACKS_NAME', randomName: 'choice-parameter-stacks-name', referencedParameters: 'CONDITION', script: scriptlerScript(isSandboxed: false, scriptlerBuilder: [builderId: '1751381611548_12', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_stacks.groovy'])]
-    string(defaultValue: 'DEVOPS-12345', name: 'TICKET', description: 'Ticket Number for Backend Configuration/Reference')
-}
-stages{
-    // stage('Install Dependencies') {
-    //   steps {
-    //     sh '''
-    //       # Check if Python is installed, if not install it
-    //       if ! command -v python3 &> /dev/null; then
-    //         echo "Installing Python3..."
-    //         apt-get update
-    //         apt-get install -y python3 python3-pip
-    //       else
-    //         echo "Python3 is already installed"
-    //         python3 --version
-    //       fi
-          
-    //       # Install required Python packages
-    //       echo "Installing Python dependencies..."
-    //       pip3 install --upgrade pip
-    //       pip3 install requests
-    //     '''
-    //   }
-    // }
+    stages {
+        stage('Set Parameters') {
+            steps {
+                script {
+                    properties([
+                        parameters([
+                            string(name: 'BRANCH', defaultValue: 'main', description: 'Branch To Build'),
+                            choice(choices: ['apply', 'destroy'], description: 'Env for deployment', name: 'CONDITION'),
+                            [$class: 'ChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: false, name: 'MUTING_ENVIRONMENT', randomName: 'choice-parameter-2578984402057198', script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [builderId: '1751381611548_11', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_environment.groovy'])],
+                            string(defaultValue: '21:00:00', name: 'START_TIME', description: 'Set the Start time of Downtime. Add Time in 24 hrs'),
+                            string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD'),
+                            string(defaultValue: '23:45:00', name: 'END_TIME', description: 'Set the End time of Downtime. Add Time in 24 hrs'),
+                            string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. YYYY-MM-DD'),
+                            [$class: 'CascadeChoiceParameter', choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: true, name: 'STACKS_NAME', randomName: 'choice-parameter-stacks-name', referencedParameters: 'CONDITION', script: scriptlerScript(isSandboxed: false, scriptlerBuilder: [builderId: '1751381611548_12', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_stacks.groovy'])],
+                            string(defaultValue: 'DEVOPS-12345', name: 'TICKET', description: 'Ticket Number for Backend Configuration/Reference')
+                        ])
+                    ])
+                }
+            }
+        }
 
     stage('Build selection payload') {
       steps {
