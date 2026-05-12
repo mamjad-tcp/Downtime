@@ -14,7 +14,6 @@ pipeline {
     }
 
     stages {
-    stages {
         stage('Set Parameters') {
             steps {
                 script {
@@ -112,4 +111,3 @@ pipeline {
             }
         }
     }
-}
