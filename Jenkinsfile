@@ -28,32 +28,7 @@ pipeline{
     string(name: 'START_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the Start Date of Downtime. YYYY-MM-DD')
     string(name: 'END_TIME', defaultValue: '23:45:00', description: 'Set the End time of Downtime. Add Time in 24 hrs')
     string(name: 'END_DATE', defaultValue: "${new Date().format('yyyy-MM-dd')}", description: 'Set the End Date of Downtime. YYYY-MM-DD')
-extendedChoice(
-    name: 'STACKS_NAME',
-    description: 'Stacks Name (multi-select)',
-    type: 'PT_CHECKBOX',
-    multiSelectDelimiter: ',',
-    groovyScript: '''
-        import groovy.json.JsonSlurper
-
-        if (binding.variables.get("CONDITION") == "destroy") {
-            return ["N/A"]
-        }
-
-        try {
-            def url = "https://raw.githubusercontent.com/mamjad-tcp/Downtime/master/stack.json?cb=${System.currentTimeMillis()}"
-            def connection = new URL(url).openConnection()
-            connection.setUseCaches(false)
-            connection.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
-            connection.setRequestProperty("Pragma", "no-cache")
-            def jsonText = connection.inputStream.text
-            def stacks = new JsonSlurper().parseText(jsonText)
-            return stacks.collect { it.group_tag }.sort()
-        } catch (Exception e) {
-            return ["Error loading stacks: ${e.message}"]
-        }
-    '''
-)
+    activeChoiceReactive choiceType: 'PT_CHECKBOX', filterLength: 1, filterable: true, name: 'STACKS_NAME', randomName: 'choice-parameter-stacks-name', referencedParameters: 'CONDITION', script: scriptlerScript(isSandboxed: true, scriptlerBuilder: [builderId: '1751381611548_12', parameters: [], propagateParams: false, scriptId: 'newrelic_downtime_stacks.groovy'])
 
     string(name: 'TICKET', defaultValue: 'DEVOPS-12345', description: 'Ticket Number for Backend Configuration/Reference')
     }
