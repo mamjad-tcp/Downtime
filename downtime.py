@@ -2,11 +2,18 @@ import json
 import os
 import sys
 
+import boto3
 import requests
+from botocore.exceptions import ClientError
 
 ENDPOINT = "https://api.newrelic.com/graphql"
 TIMEZONE = "America/Chicago"
 
+# ─── S3 State Backend ────────────────────────────────────────────────────────
+S3_BUCKET = "newrelic-downtime"
+S3_REGION = "us-east-1"
+
+# ─── Condition IDs live here, not in Jenkins ────────────────────────────────
 ENVIRONMENT_CONFIG = {
     "App": {
         "key": "app",
@@ -24,6 +31,9 @@ ENVIRONMENT_CONFIG = {
         "label": "TCP Sandbox Service Downtime Muting Rule",
     },
 }
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def build_stack_suffix(stack_names):
     return "-".join(
@@ -48,36 +58,92 @@ def execute_graphql(api_key, query):
     return response.json()
 
 
-def state_filename(ticket):
-    return f"{ticket}_downtime.json"
+def _s3_client():
+    return boto3.client("s3", region_name=S3_REGION)
+
+
+# ─── S3 State ─────────────────────────────────────────────────────────────────
+
+def state_s3_key(ticket):
+    """S3 object key for a ticket's state file."""
+    return f"state/{ticket}_downtime.json"
+
 
 def load_state(ticket):
-    filename = state_filename(ticket)
-    if not os.path.exists(filename):
-        return {
-            "ticket": ticket,
-            "muting_rules": {"app": [], "admin": [], "sandbox": []},
-            # keyed by stack name; each value is a list of downtime entries
-            "synthetic_downtimes": {},
-        }
-    with open(filename, "r") as fh:
-        state = json.load(fh)
-    # Migrate old flat-list format -> per-stack dict
+    """
+    Fetch state from S3.  If the object does not exist yet, return a blank
+    default state.  The bucket is versioned, so every put creates a new
+    version automatically.
+    """
+    s3  = _s3_client()
+    key = state_s3_key(ticket)
+
+    try:
+        response = s3.get_object(Bucket=S3_BUCKET, Key=key)
+        state    = json.loads(response["Body"].read().decode("utf-8"))
+        version  = response.get("VersionId", "n/a")
+        print(f"  State fetched ← s3://{S3_BUCKET}/{key}  (version: {version})")
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] in ("NoSuchKey", "404"):
+            print(f"  No existing state in S3 — starting fresh.")
+            state = {
+                "ticket": ticket,
+                "muting_rules": {"app": [], "admin": [], "sandbox": []},
+                "synthetic_downtimes": {},
+            }
+        else:
+            raise
+
+    # Migrate old flat-list synthetic_downtimes → per-stack dict
     if isinstance(state.get("synthetic_downtimes"), list):
         old_list = state["synthetic_downtimes"]
         migrated: dict = {}
         for entry in old_list:
             monitors = entry.get("monitors", [])
-            key = monitors[0]["name"] if monitors else entry.get("name", "unknown")
-            migrated.setdefault(key, []).append(entry)
+            k = monitors[0]["name"] if monitors else entry.get("name", "unknown")
+            migrated.setdefault(k, []).append(entry)
         state["synthetic_downtimes"] = migrated
+
     return state
 
+
 def save_state(ticket, state):
-    filename = state_filename(ticket)
-    with open(filename, "w") as fh:
-        json.dump(state, fh, indent=2)
-    print(f"State saved - {filename}")
+    """
+    Upload state JSON to S3.  Because the bucket is versioned, each save
+    creates a new version — old versions are preserved automatically.
+    """
+    s3      = _s3_client()
+    key     = state_s3_key(ticket)
+    body    = json.dumps(state, indent=2).encode("utf-8")
+
+    response = s3.put_object(
+        Bucket      = S3_BUCKET,
+        Key         = key,
+        Body        = body,
+        ContentType = "application/json",
+    )
+    version = response.get("VersionId", "n/a")
+    print(f"  State saved   → s3://{S3_BUCKET}/{key}  (version: {version})")
+
+
+def delete_state(ticket):
+    """
+    Delete the state object from S3 after a successful destroy.
+    Because the bucket is versioned this inserts a delete marker; all
+    previous versions remain recoverable in S3.
+    """
+    s3  = _s3_client()
+    key = state_s3_key(ticket)
+
+    try:
+        response = s3.delete_object(Bucket=S3_BUCKET, Key=key)
+        marker   = response.get("VersionId", "n/a")
+        print(f"  State deleted ✗ s3://{S3_BUCKET}/{key}  (delete-marker: {marker})")
+    except ClientError as exc:
+        print(f"  WARNING: Could not delete state from S3: {exc}")
+
+
+# ─── Duplicate Guards ─────────────────────────────────────────────────────────
 
 def _is_duplicate_muting_rule(existing_rules, start_time, end_time):
     return any(
@@ -85,12 +151,16 @@ def _is_duplicate_muting_rule(existing_rules, start_time, end_time):
         for r in existing_rules
     )
 
+
 def _is_duplicate_synthetic(existing_entries, start_time, end_time):
     """Duplicate = same time window already tracked for this stack key."""
     return any(
         d["start_time"] == start_time and d["end_time"] == end_time
         for d in existing_entries
     )
+
+
+# ─── GraphQL Operations ───────────────────────────────────────────────────────
 
 def get_monitor_guids_for_stack(api_key, account_id, stack_name):
     """Return (guids, details) for a single stack name."""
@@ -126,18 +196,19 @@ def get_monitor_guids_for_stack(api_key, account_id, stack_name):
             all_monitors.append({"guid": guid, "name": name})
 
     stack_lower = stack_name.lower()
-    guids = []
+    guids   = []
     details = []
     for monitor in all_monitors:
         if stack_lower in monitor["name"].lower():
             guids.append(monitor["guid"])
             details.append({"name": monitor["name"], "guid": monitor["guid"]})
-            print(f"     {monitor['name']}  ({monitor['guid']})")
+            print(f"    ✔ {monitor['name']}  ({monitor['guid']})")
 
     if not guids:
-        print(f"No monitors found for stack '{stack_name}'")
+        print(f"    ✘ No monitors found for stack '{stack_name}'")
 
     return guids, details
+
 
 def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, monitor_guids):
     guid_str = ", ".join(f'"{g}"' for g in monitor_guids if g)
@@ -157,6 +228,7 @@ def create_synthetic_downtime(api_key, account_id, name, start_time, end_time, m
     """
     return execute_graphql(api_key, mutation)
 
+
 def destroy_synthetic_downtime(api_key, downtime_guid):
     mutation = f"""
     mutation {{
@@ -166,6 +238,7 @@ def destroy_synthetic_downtime(api_key, downtime_guid):
     }}
     """
     return execute_graphql(api_key, mutation)
+
 
 def create_muting_rule(api_key, account_id, name, start_time, end_time, condition_ids):
     conditions_str = ",".join(
@@ -198,6 +271,7 @@ def create_muting_rule(api_key, account_id, name, start_time, end_time, conditio
     """
     return execute_graphql(api_key, mutation)
 
+
 def destroy_muting_rule(api_key, account_id, rule_id):
     mutation = f"""
     mutation {{
@@ -208,28 +282,32 @@ def destroy_muting_rule(api_key, account_id, rule_id):
     """
     return execute_graphql(api_key, mutation)
 
+
+# ─── Apply / Destroy ──────────────────────────────────────────────────────────
+
 def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, environments):
     sep = "=" * 60
     print(f"\n{sep}")
-    print(f"  APPLY DOWNTIME - {ticket}")
+    print(f"  APPLY DOWNTIME — {ticket}")
     print(f"  Stacks       : {stack_names}")
     print(f"  Environments : {environments}")
-    print(f"  Window       : {start_dt}  ->  {end_dt}")
+    print(f"  Window       : {start_dt}  →  {end_dt}")
     print(f"{sep}\n")
 
     state = load_state(ticket)
 
-    print("[ Synthetic Downtimes - per stack ]")
+    # ── 1. One Synthetic Downtime per Stack ──────────────────────────────────
+    print("[ Synthetic Downtimes — per stack ]")
     synthetic_map = state.setdefault("synthetic_downtimes", {})
 
     for stack in stack_names:
         stack_key = stack.strip().lower().replace(" ", "-").replace("_", "-")
-        print(f"\nStack: {stack}")
+        print(f"\n  Stack: {stack}")
 
         existing_entries = synthetic_map.setdefault(stack_key, [])
 
         if _is_duplicate_synthetic(existing_entries, start_dt, end_dt):
-            print(f"Duplicate detected (same window) - skipping.")
+            print("  Duplicate detected (same window) — skipping.")
             continue
 
         monitor_guids, monitor_details = get_monitor_guids_for_stack(
@@ -237,22 +315,22 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
         )
 
         if not monitor_guids:
-            print(f"No monitors matched for '{stack}' - skipping synthetic downtime.")
+            print(f"  No monitors matched for '{stack}' — skipping synthetic downtime.")
             continue
 
         name = f"{ticket} - TCP Production Synthetic Monitor Downtime ({stack})"
-        print(f"Creating: {name}")
+        print(f"  Creating: {name}")
         result = create_synthetic_downtime(
             api_key, account_id, name, start_dt, end_dt, monitor_guids
         )
 
         if result.get("errors"):
-            print(f"ERROR: {result['errors']}")
+            print(f"  ERROR: {result['errors']}")
             sys.exit(1)
 
         rd = result.get("data", {}).get("syntheticsCreateOnceMonitorDowntime", {})
         if not rd.get("guid"):
-            print("ERROR: No GUID returned for synthetic downtime.")
+            print("  ERROR: No GUID returned for synthetic downtime.")
             sys.exit(1)
 
         existing_entries.append({
@@ -262,32 +340,33 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
             "start_time": start_dt,
             "end_time": end_dt,
         })
-        print(f"Created  GUID: {rd['guid']}")
+        print(f"  ✔ Created  GUID: {rd['guid']}")
 
     print()
 
+    # ── 2. One Muting Rule per Environment ───────────────────────────────────
     for env in environments:
         cfg = ENVIRONMENT_CONFIG.get(env)
         if not cfg:
-            print(f"[ {env} ] Unknown environment - skipping.")
+            print(f"[ {env} ] Unknown environment — skipping.")
             continue
 
         key           = cfg["key"]
         condition_ids = cfg["condition_ids"]
         rule_name     = f"{ticket} - {cfg['label']}"
 
-        print(f"[Muting Rule - {env} ]")
+        print(f"[ Muting Rule — {env} ]")
 
         existing = state["muting_rules"].setdefault(key, [])
         if _is_duplicate_muting_rule(existing, start_dt, end_dt):
-            print(f"  Duplicate detected (same window) - skipping.\n")
+            print("  Duplicate detected (same window) — skipping.\n")
             continue
 
-        print(f"Creating: {rule_name}")
+        print(f"  Creating: {rule_name}")
         result = create_muting_rule(api_key, account_id, rule_name, start_dt, end_dt, condition_ids)
 
         if result.get("errors"):
-            print(f"ERROR: {result['errors'][0].get('message', result['errors'])}\n")
+            print(f"  ERROR: {result['errors'][0].get('message', result['errors'])}\n")
             continue
 
         rd = result.get("data", {}).get("alertsMutingRuleCreate", {})
@@ -300,29 +379,31 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
                 "start_time": start_dt,
                 "end_time": end_dt,
             })
-            print(f"Created  ID: {rule_id}\n")
+            print(f"  ✔ Created  ID: {rule_id}\n")
         else:
-            print("WARNING: Muting rule created but no ID returned.\n")
+            print("  WARNING: Muting rule created but no ID returned.\n")
 
     save_state(ticket, state)
     print("Downtime application complete.")
 
+
 def destroy_downtime(api_key, account_id, ticket):
     sep = "=" * 60
     print(f"\n{sep}")
-    print(f"  DESTROY DOWNTIME - {ticket}")
+    print(f"  DESTROY DOWNTIME — {ticket}")
     print(f"{sep}\n")
 
     state = load_state(ticket)
 
+    # ── Synthetic Downtimes (per stack) ──────────────────────────────────────
     synthetic_map = state.get("synthetic_downtimes", {})
     if not synthetic_map:
-        print("[Synthetic Downtimes ]\n  None found.\n")
+        print("[ Synthetic Downtimes ]\n  None found.\n")
     else:
         for stack_key, entries in synthetic_map.items():
             if not entries:
                 continue
-            print(f"[Synthetic Downtimes - {stack_key} ]")
+            print(f"[ Synthetic Downtimes — {stack_key} ]")
             for item in entries:
                 guid = item.get("id")
                 if not guid:
@@ -330,33 +411,34 @@ def destroy_downtime(api_key, account_id, ticket):
                 print(f"  Deleting: {item.get('name', guid)}")
                 result = destroy_synthetic_downtime(api_key, guid)
                 if result.get("errors"):
-                    print(f"ERROR: {result['errors']}")
+                    print(f"  ERROR: {result['errors']}")
                 else:
-                    print(f"Deleted  GUID: {guid}")
+                    print(f"  ✔ Deleted  GUID: {guid}")
             print()
 
+    # ── Muting Rules ─────────────────────────────────────────────────────────
     for env_key, rules in state.get("muting_rules", {}).items():
         if not rules:
             continue
-        print(f"[Muting Rules - {env_key} ]")
+        print(f"[ Muting Rules — {env_key} ]")
         for rule in rules:
             rule_id = rule.get("id")
             if not rule_id:
                 continue
-            print(f"Deleting: {rule.get('name', rule_id)}")
+            print(f"  Deleting: {rule.get('name', rule_id)}")
             result = destroy_muting_rule(api_key, account_id, rule_id)
             if result.get("errors"):
-                print(f"ERROR: {result['errors']}")
+                print(f"  ERROR: {result['errors']}")
             else:
-                print(f"Deleted  ID: {rule_id}")
+                print(f"  ✔ Deleted  ID: {rule_id}")
         print()
 
-    filename = state_filename(ticket)
-    if os.path.exists(filename):
-        os.remove(filename)
-        print(f"Removed state file: {filename}")
-
+    # ── Remove state from S3 ─────────────────────────────────────────────────
+    delete_state(ticket)
     print("\nDowntime destruction complete.")
+
+
+# ─── Entry Point ──────────────────────────────────────────────────────────────
 
 def main():
     if len(sys.argv) < 5:
@@ -385,8 +467,8 @@ def main():
 
         start_dt     = f"{start_date}T{start_time}"
         end_dt       = f"{end_date}T{end_time}"
-        stack_names  = [s.strip() for s in stacks_csv.split(",")  if s.strip()]
-        environments = [e.strip() for e in envs_csv.split(",")    if e.strip()]
+        stack_names  = [s.strip() for s in stacks_csv.split(",") if s.strip()]
+        environments = [e.strip() for e in envs_csv.split(",")   if e.strip()]
 
         apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, environments)
 
@@ -396,6 +478,7 @@ def main():
     else:
         print(f"Unknown action: '{action}'. Use 'apply' or 'destroy'.")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
