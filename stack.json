@@ -32,147 +32,147 @@
     "description": "Production Group 5"
   },
   {
-    "group_tag": "Group-PHR-1",
+    "group_tag": "PHR-1",
     "description": "PHR Production Group 1"
   },
   {
-    "group_tag": "Group-PHR-2",
+    "group_tag": "PHR-2",
     "description": "PHR Production Group 2"
   },
   {
-    "group_tag": "Group-PHR-3",
+    "group_tag": "PHR-3",
     "description": "PHR Production Group 3"
   },
   {
-    "group_tag": "Group-PHR-4",
+    "group_tag": "PHR-4",
     "description": "PHR Production Group 4"
   },
   {
-    "group_tag": "Group-PHR-5",
+    "group_tag": "PHR-5",
     "description": "PHR Production Group 5"
   },
   {
-    "group_tag": "Group-PHR-6",
+    "group_tag": "PHR-6",
     "description": "PHR Production Group 6"
   },
   {
-    "group_tag": "Group-PHR-7",
+    "group_tag": "PHR-7",
     "description": "PHR Production Group 7"
   },
   {
-    "group_tag": "Group-PHR-8",
+    "group_tag": "PHR-8",
     "description": "PHR Production Group 8"
   },
   {
-    "group_tag": "Group-PHR-9",
+    "group_tag": "PHR-9",
     "description": "PHR Production Group 9"
   },
   {
-    "group_tag": "Group-Prod01",
+    "group_tag": "Prod01",
     "description": "Production 01"
   },
   {
-    "group_tag": "Group-Prod03",
+    "group_tag": "Prod03",
     "description": "Production 03"
   },
   {
-    "group_tag": "Group-Prod05",
+    "group_tag": "Prod05",
     "description": "Production 05"
   },
   {
-    "group_tag": "Group-Prod07",
+    "group_tag": "Prod07",
     "description": "Production 07"
   },
   {
-    "group_tag": "Group-Prod09",
+    "group_tag": "Prod09",
     "description": "Production 09"
   },
   {
-    "group_tag": "Group-Prod15",
+    "group_tag": "Prod15",
     "description": "Production 15"
   },
   {
-    "group_tag": "Group-Prod24",
+    "group_tag": "Prod24",
     "description": "Production 24"
   },
   {
-    "group_tag": "Group-Prod25",
+    "group_tag": "Prod25",
     "description": "Production 25"
   },
   {
-    "group_tag": "Group-Prod29",
+    "group_tag": "Prod29",
     "description": "Production 29"
   },
   {
-    "group_tag": "Group-Prod30",
+    "group_tag": "Prod30",
     "description": "Production 30"
   },
   {
-    "group_tag": "Group-Prod33",
+    "group_tag": "Prod33",
     "description": "Production 33"
   },
   {
-    "group_tag": "Group-Prod34",
+    "group_tag": "Prod34",
     "description": "Production 34"
   },
   {
-    "group_tag": "Group-Prod35",
+    "group_tag": "Prod35",
     "description": "Production 35"
   },
   {
-    "group_tag": "Group-Prod36",
+    "group_tag": "Prod36",
     "description": "Production 36"
   },
   {
-    "group_tag": "Group-Prod37",
+    "group_tag": "Prod37",
     "description": "Production 37"
   },
   {
-    "group_tag": "Group-Prod38",
+    "group_tag": "Prod38",
     "description": "Production 38"
   },
   {
-    "group_tag": "Group-Prod39",
+    "group_tag": "Prod39",
     "description": "Production 39"
   },
   {
-    "group_tag": "Group-Prod43",
+    "group_tag": "Prod43",
     "description": "Production 43"
   },
   {
-    "group_tag": "Group-Prod60",
+    "group_tag": "Prod60",
     "description": "Production 60"
   },
   {
-    "group_tag": "Group-Prod61",
+    "group_tag": "Prod61",
     "description": "Production 61"
   },
   {
-    "group_tag": "Group-Prod62",
+    "group_tag": "Prod62",
     "description": "Production 62"
   },
   {
-    "group_tag": "Group-Prod63",
+    "group_tag": "Prod63",
     "description": "Production 63"
   },
   {
-    "group_tag": "Group-Prod64",
+    "group_tag": "Prod64",
     "description": "Production 64"
   },
   {
-    "group_tag": "Group-Prod65",
+    "group_tag": "Prod65",
     "description": "Production 65"
   },
   {
-    "group_tag": "Group-Prod66",
+    "group_tag": "Prod66",
     "description": "Production 66"
   },
   {
-    "group_tag": "Group-Prod67",
+    "group_tag": "Prod67",
     "description": "Production 67"
   },
   {
-    "group_tag": "Group-Prod68",
+    "group_tag": "Prod68",
     "description": "Production 68"
   },
   {
