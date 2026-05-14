@@ -1,34 +1,34 @@
 [
   {
-    "group_tag": "Group-1",
+    "group_tag": "Group1",
     "description": "Production Group 1"
   },
   {
-    "group_tag": "Group-10",
+    "group_tag": "Group10",
     "description": "Production Group 10"
   },
   {
-    "group_tag": "Group-10-2",
+    "group_tag": "Group10-2",
     "description": "Production Group 10-2"
   },
   {
-    "group_tag": "Group-12",
+    "group_tag": "Group12",
     "description": "Production Group 12"
   },
   {
-    "group_tag": "Group-2",
+    "group_tag": "Group2",
     "description": "Production Group 2"
   },
   {
-    "group_tag": "Group-3",
+    "group_tag": "Group3",
     "description": "Production Group 3"
   },
   {
-    "group_tag": "Group-4",
+    "group_tag": "Group4",
     "description": "Production Group 4"
   },
   {
-    "group_tag": "Group-5",
+    "group_tag": "Group5",
     "description": "Production Group 5"
   },
   {
