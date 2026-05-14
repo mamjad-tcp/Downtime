@@ -64,10 +64,21 @@ def load_state(ticket):
         return {
             "ticket": ticket,
             "muting_rules": {"app": [], "admin": [], "sandbox": []},
-            "synthetic_downtimes": [],
+            # keyed by stack name; each value is a list of downtime entries
+            "synthetic_downtimes": {},
         }
     with open(filename, "r") as fh:
-        return json.load(fh)
+        state = json.load(fh)
+    # Migrate old flat-list format → per-stack dict
+    if isinstance(state.get("synthetic_downtimes"), list):
+        old_list = state["synthetic_downtimes"]
+        migrated: dict = {}
+        for entry in old_list:
+            monitors = entry.get("monitors", [])
+            key = monitors[0]["name"] if monitors else entry.get("name", "unknown")
+            migrated.setdefault(key, []).append(entry)
+        state["synthetic_downtimes"] = migrated
+    return state
 
 
 def save_state(ticket, state):
@@ -84,19 +95,18 @@ def _is_duplicate_muting_rule(existing_rules, start_time, end_time):
     )
 
 
-def _is_duplicate_synthetic(existing, start_time, end_time, monitor_guids):
-    target = set(monitor_guids)
+def _is_duplicate_synthetic(existing_entries, start_time, end_time):
+    """Duplicate = same time window already tracked for this stack key."""
     return any(
-        d["start_time"] == start_time
-        and d["end_time"] == end_time
-        and set(d.get("monitor_guids", [])) == target
-        for d in existing
+        d["start_time"] == start_time and d["end_time"] == end_time
+        for d in existing_entries
     )
 
 
 # ─── GraphQL Operations ───────────────────────────────────────────────────────
 
-def get_monitor_guids(api_key, account_id, stack_names):
+def get_monitor_guids_for_stack(api_key, account_id, stack_name):
+    """Return (guids, details) for a single stack name."""
     query = f"""
     {{
       actor {{
@@ -119,8 +129,8 @@ def get_monitor_guids(api_key, account_id, stack_names):
 
     rows = result.get("data", {}).get("actor", {}).get("nrql", {}).get("results", [])
 
-    all_monitors = []
     seen = set()
+    all_monitors = []
     for item in rows:
         guid = item.get("entityGuid")
         name = item.get("monitorName", "")
@@ -128,22 +138,17 @@ def get_monitor_guids(api_key, account_id, stack_names):
             seen.add(guid)
             all_monitors.append({"guid": guid, "name": name})
 
+    stack_lower = stack_name.lower()
     guids = []
     details = []
-    matched = set()
+    for monitor in all_monitors:
+        if stack_lower in monitor["name"].lower():
+            guids.append(monitor["guid"])
+            details.append({"name": monitor["name"], "guid": monitor["guid"]})
+            print(f"    ✔ {monitor['name']}  ({monitor['guid']})")
 
-    for stack in stack_names:
-        stack_lower = stack.lower()
-        found = False
-        for monitor in all_monitors:
-            if stack_lower in monitor["name"].lower() and monitor["guid"] not in matched:
-                matched.add(monitor["guid"])
-                guids.append(monitor["guid"])
-                details.append({"name": monitor["name"], "guid": monitor["guid"]})
-                print(f"    ✔ {monitor['name']}  ({monitor['guid']})")
-                found = True
-        if not found:
-            print(f"    ✘ No monitors found for stack '{stack}'")
+    if not guids:
+        print(f"    ✘ No monitors found for stack '{stack_name}'")
 
     return guids, details
 
@@ -234,19 +239,33 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
 
     state = load_state(ticket)
 
-    # ── 1. Synthetic Downtime ────────────────────────────────────────────────
-    print("[ Synthetic Downtime ]")
-    monitor_guids, monitor_details = get_monitor_guids(api_key, account_id, stack_names)
+    # ── 1. One Synthetic Downtime per Stack ──────────────────────────────────
+    print("[ Synthetic Downtimes — per stack ]")
+    synthetic_map = state.setdefault("synthetic_downtimes", {})
 
-    if not monitor_guids:
-        print("  No monitors matched — skipping synthetic downtime.\n")
-    elif _is_duplicate_synthetic(state["synthetic_downtimes"], start_dt, end_dt, monitor_guids):
-        print("  Duplicate detected (same window + monitors) — skipping.\n")
-    else:
-        stack_suffix = build_stack_suffix(stack_names)
-        name = f"{ticket} - TCP Production Synthetic Monitor Downtime ({stack_suffix})"
+    for stack in stack_names:
+        stack_key = stack.strip().lower().replace(" ", "-").replace("_", "-")
+        print(f"\n  Stack: {stack}")
+
+        existing_entries = synthetic_map.setdefault(stack_key, [])
+
+        if _is_duplicate_synthetic(existing_entries, start_dt, end_dt):
+            print(f"  Duplicate detected (same window) — skipping.")
+            continue
+
+        monitor_guids, monitor_details = get_monitor_guids_for_stack(
+            api_key, account_id, stack
+        )
+
+        if not monitor_guids:
+            print(f"  No monitors matched for '{stack}' — skipping synthetic downtime.")
+            continue
+
+        name = f"{ticket} - TCP Production Synthetic Monitor Downtime ({stack})"
         print(f"  Creating: {name}")
-        result = create_synthetic_downtime(api_key, account_id, name, start_dt, end_dt, monitor_guids)
+        result = create_synthetic_downtime(
+            api_key, account_id, name, start_dt, end_dt, monitor_guids
+        )
 
         if result.get("errors"):
             print(f"  ERROR: {result['errors']}")
@@ -257,15 +276,16 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
             print("  ERROR: No GUID returned for synthetic downtime.")
             sys.exit(1)
 
-        state["synthetic_downtimes"].append({
+        existing_entries.append({
             "id": rd["guid"],
             "name": name,
             "monitors": monitor_details,
-            "monitor_guids": monitor_guids,   # kept for dedup checks
             "start_time": start_dt,
             "end_time": end_dt,
         })
-        print(f"  ✔ Created  GUID: {rd['guid']}\n")
+        print(f"  ✔ Created  GUID: {rd['guid']}")
+
+    print()
 
     # ── 2. One Muting Rule per Environment ───────────────────────────────────
     for env in environments:
@@ -318,23 +338,26 @@ def destroy_downtime(api_key, account_id, ticket):
 
     state = load_state(ticket)
 
-    # ── Synthetic Downtimes ──────────────────────────────────────────────────
-    print("[ Synthetic Downtimes ]")
-    synthetic_list = state.get("synthetic_downtimes", [])
-    if not synthetic_list:
-        print("  None found.\n")
+    # ── Synthetic Downtimes (per stack) ──────────────────────────────────────
+    synthetic_map = state.get("synthetic_downtimes", {})
+    if not synthetic_map:
+        print("[ Synthetic Downtimes ]\n  None found.\n")
     else:
-        for item in synthetic_list:
-            guid = item.get("id")
-            if not guid:
+        for stack_key, entries in synthetic_map.items():
+            if not entries:
                 continue
-            print(f"  Deleting: {item.get('name', guid)}")
-            result = destroy_synthetic_downtime(api_key, guid)
-            if result.get("errors"):
-                print(f"  ERROR: {result['errors']}")
-            else:
-                print(f"  ✔ Deleted  GUID: {guid}")
-        print()
+            print(f"[ Synthetic Downtimes — {stack_key} ]")
+            for item in entries:
+                guid = item.get("id")
+                if not guid:
+                    continue
+                print(f"  Deleting: {item.get('name', guid)}")
+                result = destroy_synthetic_downtime(api_key, guid)
+                if result.get("errors"):
+                    print(f"  ERROR: {result['errors']}")
+                else:
+                    print(f"  ✔ Deleted  GUID: {guid}")
+            print()
 
     # ── Muting Rules ─────────────────────────────────────────────────────────
     for env_key, rules in state.get("muting_rules", {}).items():
@@ -388,10 +411,10 @@ def main():
         stacks_csv   = sys.argv[9]
         envs_csv     = sys.argv[10] if len(sys.argv) > 10 else ""
 
-        start_dt    = f"{start_date}T{start_time}"
-        end_dt      = f"{end_date}T{end_time}"
-        stack_names = [s.strip() for s in stacks_csv.split(",")  if s.strip()]
-        environments = [e.strip() for e in envs_csv.split(",")   if e.strip()]
+        start_dt     = f"{start_date}T{start_time}"
+        end_dt       = f"{end_date}T{end_time}"
+        stack_names  = [s.strip() for s in stacks_csv.split(",")  if s.strip()]
+        environments = [e.strip() for e in envs_csv.split(",")    if e.strip()]
 
         apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, environments)
 
