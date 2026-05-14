@@ -2,54 +2,12 @@ import json
 import os
 import sys
 
-import boto3
 import requests
-from botocore.exceptions import ClientError
 
 ENDPOINT = "https://api.newrelic.com/graphql"
 TIMEZONE = "America/Chicago"
 
-# ─── S3 Configuration ─────────────────────────────────────────────────────────
-# Replace these placeholders with your actual values.
-# Jenkins IAM role/user must have the following S3 permissions:
-#   - s3:GetObject
-#   - s3:PutObject
-#   - s3:DeleteObject
-#   - s3:ListBucket       (needed to check object existence)
-#
-# Recommended IAM policy (attach to the Jenkins role/user):
-#
-#   {
-#     "Version": "2012-10-17",
-#     "Statement": [
-#       {
-#         "Effect": "Allow",
-#         "Action": [
-#           "s3:GetObject",
-#           "s3:PutObject",
-#           "s3:DeleteObject"
-#         ],
-#         "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME/downtime/*"
-#       },
-#       {
-#         "Effect": "Allow",
-#         "Action": "s3:ListBucket",
-#         "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME",
-#         "Condition": {
-#           "StringLike": { "s3:prefix": ["downtime/*"] }
-#         }
-#       }
-#     ]
-#   }
-
-S3_BUCKET_NAME = "YOUR-BUCKET-NAME"          # e.g. "tcp-devops-downtime-state"
-S3_KEY_PREFIX  = "downtime"                  # top-level folder inside the bucket
-AWS_REGION     = "us-east-1"                 # e.g. "us-east-1" — match your bucket region
-
-# Final S3 key pattern → downtime/{ticket}/{ticket}_downtime.json
-
-
-# ─── Condition IDs live here, not in Jenkins ──────────────────────────────────
+# ─── Condition IDs live here, not in Jenkins ────────────────────────────────
 ENVIRONMENT_CONFIG = {
     "App": {
         "key": "app",
@@ -69,7 +27,7 @@ ENVIRONMENT_CONFIG = {
 }
 
 
-# ─── General Helpers ─────────────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def build_stack_suffix(stack_names):
     return "-".join(
@@ -94,141 +52,30 @@ def execute_graphql(api_key, query):
     return response.json()
 
 
-# ─── S3 State Management ──────────────────────────────────────────────────────
+# ─── JSON State ──────────────────────────────────────────────────────────────
 
-def _s3_client():
-    """Return a boto3 S3 client.
-    
-    Credentials are automatically resolved in this order by boto3:
-      1. IAM role attached to the Jenkins EC2 instance (recommended — no keys needed)
-      2. Environment variables AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
-      3. ~/.aws/credentials file on the Jenkins agent
-
-    No code changes are needed here when using an IAM role — just attach the
-    role to the EC2 instance and boto3 picks it up automatically.
-    """
-    return boto3.client("s3", region_name=AWS_REGION)
+def state_filename(ticket):
+    return f"{ticket}_downtime.json"
 
 
-def _s3_key(ticket):
-    """Build the full S3 object key for a given ticket.
-    
-    Pattern: downtime/{ticket}/{ticket}_downtime.json
-    Example: downtime/DEVOPS-12345/DEVOPS-12345_downtime.json
-    """
-    return f"{S3_KEY_PREFIX}/{ticket}/{ticket}_downtime.json"
+def load_state(ticket):
+    filename = state_filename(ticket)
+    if not os.path.exists(filename):
+        return {
+            "ticket": ticket,
+            "muting_rules": {"app": [], "admin": [], "sandbox": []},
+            "synthetic_downtimes": [],
+        }
+    with open(filename, "r") as fh:
+        return json.load(fh)
 
 
-def save_state_to_s3(ticket, state):
-    """Upload the downtime state JSON to S3.
+def save_state(ticket, state):
+    filename = state_filename(ticket)
+    with open(filename, "w") as fh:
+        json.dump(state, fh, indent=2)
+    print(f"  State saved → {filename}")
 
-    Called after every apply operation so the state is persisted centrally
-    and is accessible by any Jenkins agent (no local file dependency).
-
-    S3 path:  s3://{S3_BUCKET_NAME}/downtime/{ticket}/{ticket}_downtime.json
-
-    Required IAM permissions on the Jenkins role/user:
-      - s3:PutObject  on  arn:aws:s3:::{S3_BUCKET_NAME}/downtime/*
-
-    Args:
-        ticket (str): Ticket identifier, e.g. "DEVOPS-12345".
-        state  (dict): The full downtime state dictionary to persist.
-
-    Raises:
-        SystemExit: If the upload fails.
-    """
-    key     = _s3_key(ticket)
-    payload = json.dumps(state, indent=2).encode("utf-8")
-
-    try:
-        s3 = _s3_client()
-        s3.put_object(
-            Bucket      = S3_BUCKET_NAME,
-            Key         = key,
-            Body        = payload,
-            ContentType = "application/json",
-        )
-        print(f"  State saved → s3://{S3_BUCKET_NAME}/{key}")
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        print(f"  ERROR saving state to S3 [{error_code}]: {exc}")
-        sys.exit(1)
-
-
-def load_state_from_s3(ticket):
-    """Download and return the downtime state JSON from S3.
-
-    If no state file exists for the ticket yet (fresh run), an empty
-    skeleton is returned so the rest of the code can proceed normally.
-
-    S3 path:  s3://{S3_BUCKET_NAME}/downtime/{ticket}/{ticket}_downtime.json
-
-    Required IAM permissions on the Jenkins role/user:
-      - s3:GetObject   on  arn:aws:s3:::{S3_BUCKET_NAME}/downtime/*
-      - s3:ListBucket  on  arn:aws:s3:::{S3_BUCKET_NAME}
-                           (with prefix condition "downtime/*")
-
-    Args:
-        ticket (str): Ticket identifier, e.g. "DEVOPS-12345".
-
-    Returns:
-        dict: Existing state from S3, or a fresh empty skeleton if not found.
-    """
-    key = _s3_key(ticket)
-
-    try:
-        s3       = _s3_client()
-        response = s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
-        body     = response["Body"].read().decode("utf-8")
-        state    = json.loads(body)
-        print(f"  State loaded ← s3://{S3_BUCKET_NAME}/{key}")
-        return state
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        if error_code == "NoSuchKey":
-            # First run for this ticket — return an empty skeleton
-            print(f"  No existing state found in S3 for ticket '{ticket}'. Starting fresh.")
-            return {
-                "ticket": ticket,
-                "muting_rules": {"app": [], "admin": [], "sandbox": []},
-                "synthetic_downtimes": [],
-            }
-        # Any other S3 error (permissions, bucket missing, etc.) is fatal
-        print(f"  ERROR loading state from S3 [{error_code}]: {exc}")
-        sys.exit(1)
-
-
-def delete_state_from_s3(ticket):
-    """Delete the downtime state JSON from S3 after a successful destroy.
-
-    Called at the end of destroy_downtime() once all NewRelic resources have
-    been removed so the S3 object doesn't linger as stale data.
-
-    S3 path:  s3://{S3_BUCKET_NAME}/downtime/{ticket}/{ticket}_downtime.json
-
-    Required IAM permissions on the Jenkins role/user:
-      - s3:DeleteObject  on  arn:aws:s3:::{S3_BUCKET_NAME}/downtime/*
-
-    Args:
-        ticket (str): Ticket identifier, e.g. "DEVOPS-12345".
-    """
-    key = _s3_key(ticket)
-
-    try:
-        s3 = _s3_client()
-        s3.delete_object(Bucket=S3_BUCKET_NAME, Key=key)
-        print(f"  State deleted ✔ s3://{S3_BUCKET_NAME}/{key}")
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        # A missing key on delete is not an error — already gone
-        if error_code == "NoSuchKey":
-            print(f"  State file not found in S3 (already deleted or never created).")
-        else:
-            print(f"  WARNING: Could not delete state from S3 [{error_code}]: {exc}")
-            # Non-fatal — destruction of NewRelic resources already succeeded
-
-
-# ─── Deduplication Helpers ───────────────────────────────────────────────────
 
 def _is_duplicate_muting_rule(existing_rules, start_time, end_time):
     return any(
@@ -281,7 +128,7 @@ def get_monitor_guids(api_key, account_id, stack_names):
             seen.add(guid)
             all_monitors.append({"guid": guid, "name": name})
 
-    guids   = []
+    guids = []
     details = []
     matched = set()
 
@@ -385,10 +232,9 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
     print(f"  Window       : {start_dt}  →  {end_dt}")
     print(f"{sep}\n")
 
-    # Load existing state from S3 (or fresh skeleton if first run)
-    state = load_state_from_s3(ticket)
+    state = load_state(ticket)
 
-    # ── 1. Synthetic Downtime ─────────────────────────────────────────────────
+    # ── 1. Synthetic Downtime ────────────────────────────────────────────────
     print("[ Synthetic Downtime ]")
     monitor_guids, monitor_details = get_monitor_guids(api_key, account_id, stack_names)
 
@@ -415,13 +261,13 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
             "id": rd["guid"],
             "name": name,
             "monitors": monitor_details,
-            "monitor_guids": monitor_guids,
+            "monitor_guids": monitor_guids,   # kept for dedup checks
             "start_time": start_dt,
             "end_time": end_dt,
         })
         print(f"  ✔ Created  GUID: {rd['guid']}\n")
 
-    # ── 2. One Muting Rule per Environment ────────────────────────────────────
+    # ── 2. One Muting Rule per Environment ───────────────────────────────────
     for env in environments:
         cfg = ENVIRONMENT_CONFIG.get(env)
         if not cfg:
@@ -460,8 +306,7 @@ def apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, e
         else:
             print("  WARNING: Muting rule created but no ID returned.\n")
 
-    # Persist updated state back to S3
-    save_state_to_s3(ticket, state)
+    save_state(ticket, state)
     print("Downtime application complete.")
 
 
@@ -471,10 +316,9 @@ def destroy_downtime(api_key, account_id, ticket):
     print(f"  DESTROY DOWNTIME — {ticket}")
     print(f"{sep}\n")
 
-    # Load state from S3
-    state = load_state_from_s3(ticket)
+    state = load_state(ticket)
 
-    # ── Synthetic Downtimes ───────────────────────────────────────────────────
+    # ── Synthetic Downtimes ──────────────────────────────────────────────────
     print("[ Synthetic Downtimes ]")
     synthetic_list = state.get("synthetic_downtimes", [])
     if not synthetic_list:
@@ -492,7 +336,7 @@ def destroy_downtime(api_key, account_id, ticket):
                 print(f"  ✔ Deleted  GUID: {guid}")
         print()
 
-    # ── Muting Rules ──────────────────────────────────────────────────────────
+    # ── Muting Rules ─────────────────────────────────────────────────────────
     for env_key, rules in state.get("muting_rules", {}).items():
         if not rules:
             continue
@@ -509,12 +353,15 @@ def destroy_downtime(api_key, account_id, ticket):
                 print(f"  ✔ Deleted  ID: {rule_id}")
         print()
 
-    # Remove state from S3 — all NewRelic resources have been cleaned up
-    delete_state_from_s3(ticket)
+    filename = state_filename(ticket)
+    if os.path.exists(filename):
+        os.remove(filename)
+        print(f"Removed state file: {filename}")
+
     print("\nDowntime destruction complete.")
 
 
-# ─── Entry Point ─────────────────────────────────────────────────────────────
+# ─── Entry Point ──────────────────────────────────────────────────────────────
 
 def main():
     if len(sys.argv) < 5:
@@ -541,9 +388,9 @@ def main():
         stacks_csv   = sys.argv[9]
         envs_csv     = sys.argv[10] if len(sys.argv) > 10 else ""
 
-        start_dt     = f"{start_date}T{start_time}"
-        end_dt       = f"{end_date}T{end_time}"
-        stack_names  = [s.strip() for s in stacks_csv.split(",") if s.strip()]
+        start_dt    = f"{start_date}T{start_time}"
+        end_dt      = f"{end_date}T{end_time}"
+        stack_names = [s.strip() for s in stacks_csv.split(",")  if s.strip()]
         environments = [e.strip() for e in envs_csv.split(",")   if e.strip()]
 
         apply_downtime(api_key, account_id, ticket, start_dt, end_dt, stack_names, environments)
