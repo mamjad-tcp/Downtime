@@ -32,40 +32,40 @@
     "description": "Production Group 5"
   },
   {
-    "group_tag": "PHR-1",
-    "description": "PHR Production Group 1"
+    "group_tag": "prismhr1",
+    "description": "prismhr Production Group 1"
   },
   {
-    "group_tag": "PHR-2",
-    "description": "PHR Production Group 2"
+    "group_tag": "prismhr2",
+    "description": "prismhr Production Group 2"
   },
   {
-    "group_tag": "PHR-3",
-    "description": "PHR Production Group 3"
+    "group_tag": "prismhr3",
+    "description": "prismhr Production Group 3"
   },
   {
-    "group_tag": "PHR-4",
-    "description": "PHR Production Group 4"
+    "group_tag": "prismhr4",
+    "description": "prismhr Production Group 4"
   },
   {
-    "group_tag": "PHR-5",
-    "description": "PHR Production Group 5"
+    "group_tag": "prismhr5",
+    "description": "prismhr Production Group 5"
   },
   {
-    "group_tag": "PHR-6",
-    "description": "PHR Production Group 6"
+    "group_tag": "prismhr6",
+    "description": "prismhr Production Group 6"
   },
   {
-    "group_tag": "PHR-7",
-    "description": "PHR Production Group 7"
+    "group_tag": "prismhr7",
+    "description": "prismhr Production Group 7"
   },
   {
-    "group_tag": "PHR-8",
-    "description": "PHR Production Group 8"
+    "group_tag": "prismhr8",
+    "description": "prismhr Production Group 8"
   },
   {
-    "group_tag": "PHR-9",
-    "description": "PHR Production Group 9"
+    "group_tag": "prismhr9",
+    "description": "prismhr Production Group 9"
   },
   {
     "group_tag": "Prod01",
